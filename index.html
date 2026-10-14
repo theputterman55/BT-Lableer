@@ -1,0 +1,1039 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1720">
+<title>BT Labeler</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+  :root {
+    --bg: #0f1720; --panel: #18222e; --line: #2a3848; --text: #e8eef5; --muted: #8da0b3;
+    --accent: #f5a524; --accent-ink: #1a1203; --ok: #3ecf8e; --bad: #ff6b6b; --blue: #5aa9ff;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  body { display: flex; flex-direction: column; height: 100vh; height: 100dvh; overflow: hidden;
+    -webkit-user-select: none; user-select: none; overscroll-behavior: none; }
+  input, select { -webkit-user-select: text; user-select: text; }
+  button { appearance: none; border: 1px solid var(--line); background: #101a24; color: var(--text); border-radius: 10px;
+    padding: 8px 12px; font: inherit; cursor: pointer; min-height: 38px; }
+  button:hover { border-color: #3b5068; }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; font-weight: 600; }
+  button.on { outline: 2px solid var(--accent); outline-offset: -2px; }
+  button.mini { min-height: 0; padding: 2px 8px; border-radius: 8px; font-size: 13px; }
+  input[type=text], input[type=number], select { background: #0f1720; color: var(--text); border: 1px solid var(--line);
+    border-radius: 10px; padding: 8px 10px; font: inherit; min-height: 38px; width: 100%; }
+  .muted { color: var(--muted); }
+
+  .top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 12px;
+    padding-top: max(8px, env(safe-area-inset-top)); border-bottom: 1px solid var(--line); background: var(--panel); }
+  .top strong { font-size: 16px; letter-spacing: .2px; }
+  .top .spacer { flex: 1; }
+  #saveState { font-size: 12px; color: var(--muted); }
+
+  .app { flex: 1; min-height: 0; display: grid; grid-template-columns: 150px minmax(0, 1fr) 270px; }
+  .film { overflow: auto; border-right: 1px solid var(--line); padding: 6px; display: flex; flex-direction: column; gap: 6px; background: #0c131b; }
+  .fi { position: relative; flex: 0 0 auto; border: 2px solid transparent; border-radius: 6px; overflow: hidden; cursor: pointer; background: #000; }
+  .fi img { display: block; width: 100%; height: 56px; object-fit: cover; pointer-events: none; }
+  .fi .dot { position: absolute; top: 4px; right: 4px; width: 10px; height: 10px; border-radius: 50%; background: #55657a; border: 1px solid rgba(0,0,0,.5); }
+  .fi.lab .dot { background: var(--ok); }
+  .fi.emp .dot { background: var(--blue); }
+  .fi b { position: absolute; left: 3px; bottom: 2px; font-size: 11px; background: rgba(0,0,0,.6); border-radius: 4px; padding: 0 4px; }
+  .fi b:empty { display: none; }
+  .fi.on { border-color: var(--accent); }
+
+  .stageWrap { position: relative; min-width: 0; min-height: 0; background: #0a0f15; overflow: hidden; }
+  #stage { position: absolute; inset: 0; display: block; touch-action: none; }
+  .hud { position: absolute; right: 8px; top: 8px; display: flex; gap: 6px; }
+  .hud button { background: rgba(16,26,36,.85); min-width: 38px; padding: 4px 10px; }
+  #info { position: absolute; left: 8px; bottom: 8px; right: 8px; font-size: 12px; color: var(--muted); pointer-events: none;
+    text-shadow: 0 1px 2px #000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 12px; padding: 24px; text-align: center; }
+  #empty p { margin: 0; max-width: 460px; color: var(--muted); }
+  #empty button { min-width: 220px; min-height: 46px; }
+  .toast { position: absolute; left: 50%; bottom: 34px; transform: translateX(-50%); background: #223142; border: 1px solid var(--line);
+    padding: 8px 14px; border-radius: 10px; max-width: 92%; opacity: 0; pointer-events: none; transition: opacity .15s; z-index: 5; text-align: center; }
+  .toast.show { opacity: 1; }
+  .toast.bad { border-color: var(--bad); }
+
+  .side { overflow: auto; border-left: 1px solid var(--line); padding: 10px; display: flex; flex-direction: column; gap: 14px; background: var(--panel); }
+  .side h3 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); font-weight: 600; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+  .cls, .bx { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 10px; margin-bottom: 6px; cursor: pointer; background: #101a24; }
+  .cls.on, .bx.on { border-color: var(--accent); }
+  .sw { width: 14px; height: 14px; border-radius: 4px; flex: 0 0 auto; }
+  .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ct { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .addrow { display: grid; grid-template-columns: 1fr auto; gap: 6px; }
+
+  dialog { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 14px; padding: 16px; width: min(520px, 92vw); }
+  dialog::backdrop { background: rgba(0,0,0,.6); }
+  dialog h2 { margin: 0 0 10px; font-size: 18px; }
+  dialog label { display: block; margin: 10px 0 0; color: var(--muted); font-size: 13px; }
+  dialog .row { display: flex; gap: 8px; margin-top: 14px; justify-content: flex-end; }
+  dialog table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  dialog td { padding: 4px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  dialog td:first-child { white-space: nowrap; color: var(--accent); font-weight: 600; }
+  kbd { background: #0f1720; border: 1px solid var(--line); border-radius: 5px; padding: 0 5px; font: inherit; font-size: 12px; }
+
+  @media (max-width: 900px) {
+    .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(180px, 1fr) auto auto; }
+    .stageWrap { order: 1; }
+    .side { order: 2; border-left: 0; border-top: 1px solid var(--line); max-height: 38vh; }
+    .film { order: 3; flex-direction: row; border-right: 0; border-top: 1px solid var(--line); height: 78px; overflow-x: auto; overflow-y: hidden; }
+    .fi { width: 92px; height: 100%; }
+    .fi img { height: 100%; }
+    .top { gap: 6px; }
+    .top strong, .lg { display: none; }
+    .top button { padding: 6px 10px; min-height: 36px; }
+    #secTool { order: 1; } #secClasses { order: 2; } #secImage { order: 3; }
+    #secBoxes { order: 4; } #secProgress { order: 5; } #secProject { order: 6; }
+    #classList { display: flex; flex-wrap: wrap; gap: 6px; }
+    #classList .cls { margin: 0; flex: 1 1 40%; }
+  }
+</style>
+</head>
+<body>
+<header class="top">
+  <strong>BT Labeler</strong>
+  <span id="saveState"></span>
+  <span class="spacer"></span>
+  <button id="openBtn" class="primary" type="button" aria-label="Open images or ZIP" title="Open images or a ZIP from the extractor">Open<span class="lg"> images / ZIP</span></button>
+  <button id="loadLabelsBtn" type="button" aria-label="Load labels file" title="Load a labels file you saved earlier">Load<span class="lg"> labels</span></button>
+  <button id="saveLabelsBtn" type="button" aria-label="Save labels file" title="Download a labels backup file">Save<span class="lg"> labels</span></button>
+  <button id="exportBtn" type="button" aria-label="Export YOLO dataset" title="Export a YOLO training set">Export<span class="lg"> YOLO</span></button>
+  <button id="helpBtn" type="button" aria-label="Help">?</button>
+</header>
+
+<main class="app">
+  <aside class="film" id="film" aria-label="Images"></aside>
+
+  <section class="stageWrap" id="wrap">
+    <canvas id="stage"></canvas>
+    <div class="hud">
+      <button id="zoomOut" type="button" aria-label="Zoom out">&minus;</button>
+      <button id="zoomIn" type="button" aria-label="Zoom in">+</button>
+      <button id="zoomFit" type="button">Fit</button>
+      <button id="zoom1" type="button">1:1</button>
+    </div>
+    <div id="info"></div>
+    <div id="empty">
+      <h2 style="margin:0">Draw boxes around bags</h2>
+      <p>Open the ZIP from BT Frame Extractor (or any pictures). Everything stays on this device. Your work saves automatically in this browser.</p>
+      <button id="emptyOpen" class="primary" type="button">Open images / ZIP</button>
+      <p>Press <kbd>?</kbd> for shortcuts. You can also drop files onto this page.</p>
+    </div>
+    <div id="toast" class="toast"></div>
+  </section>
+
+  <aside class="side" id="side">
+    <section id="secTool">
+      <h3>Tool</h3>
+      <div class="grid3">
+        <button id="toolDraw" data-tool="draw" type="button">Draw</button>
+        <button id="toolSelect" data-tool="select" type="button">Select</button>
+        <button id="toolPan" data-tool="pan" type="button">Pan</button>
+      </div>
+    </section>
+    <section id="secImage">
+      <h3>Image <span id="pos"></span></h3>
+      <div class="grid2"><button id="prevBtn" type="button">&#9664; Prev</button><button id="nextBtn" type="button">Next &#9654;</button></div>
+      <div class="grid2" style="margin-top:6px"><button id="copyBtn" type="button">Copy prev boxes</button><button id="emptyBtn" type="button">Mark empty</button></div>
+      <div class="grid3" style="margin-top:6px"><button id="undoBtn" type="button">Undo</button><button id="redoBtn" type="button">Redo</button><button id="delBtn" type="button">Delete</button></div>
+      <button id="nextUnBtn" type="button" style="margin-top:6px;width:100%">Next unlabeled</button>
+    </section>
+    <section id="secClasses">
+      <h3>Classes</h3>
+      <div id="classList"></div>
+      <div class="addrow"><input id="newClass" type="text" placeholder="New class" maxlength="40"><button id="addClass" type="button">Add</button></div>
+    </section>
+    <section id="secBoxes">
+      <h3>Boxes on this image</h3>
+      <div id="boxList"></div>
+    </section>
+    <section id="secProgress">
+      <h3>Progress</h3>
+      <div id="progress" class="muted"></div>
+    </section>
+    <section id="secProject">
+      <h3>Project</h3>
+      <button id="clearBtn" type="button">Clear project</button>
+    </section>
+  </aside>
+</main>
+
+<dialog id="exportDlg">
+  <h2>Export YOLO dataset</h2>
+  <div id="expInfo" class="muted"></div>
+  <label>Validation share (percent)
+    <input id="expPct" type="number" min="0" max="60" step="5" value="20" inputmode="numeric">
+  </label>
+  <label>How to split
+    <select id="expMethod">
+      <option value="video">By video (recommended)</option>
+      <option value="tail">Last part of the list</option>
+      <option value="random">Random</option>
+    </select>
+  </label>
+  <p class="muted" style="margin:6px 0 0;font-size:12px">By video keeps near-identical frames from one clip out of both sets, so validation scores stay honest.</p>
+  <label style="display:flex;gap:8px;align-items:center;color:var(--text)">
+    <input id="expNeg" type="checkbox" checked style="width:auto"> Include images marked empty as background
+  </label>
+  <div id="expStatus" class="muted" style="margin-top:10px;min-height:18px"></div>
+  <div class="row">
+    <button id="expCancel" type="button">Close</button>
+    <button id="expGo" class="primary" type="button">Export ZIP</button>
+  </div>
+</dialog>
+
+<dialog id="helpDlg">
+  <h2>Shortcuts</h2>
+  <table>
+    <tr><td>B / V / H</td><td>Draw, Select (move boxes), Pan</td></tr>
+    <tr><td>Drag</td><td>Draw a box. Click a box to select it. Drag its handles to resize.</td></tr>
+    <tr><td>Select tool</td><td>Drag inside a box to move it</td></tr>
+    <tr><td>1&ndash;9</td><td>Pick a class. If a box is selected, it changes that box's class.</td></tr>
+    <tr><td>A / D</td><td>Previous / next image (arrow keys too when no box is selected)</td></tr>
+    <tr><td>Arrows</td><td>Nudge the selected box 1 px (hold Shift for 10 px)</td></tr>
+    <tr><td>C</td><td>Copy boxes from the previous image (great for bags sitting on boards)</td></tr>
+    <tr><td>E</td><td>Mark image as empty background, then go to next</td></tr>
+    <tr><td>U</td><td>Jump to next unlabeled image</td></tr>
+    <tr><td>Delete</td><td>Delete the selected box</td></tr>
+    <tr><td>Ctrl+Z / Ctrl+Y</td><td>Undo / redo</td></tr>
+    <tr><td>Wheel, + / &minus;, 0</td><td>Zoom, zoom, fit to window</td></tr>
+    <tr><td>Space + drag</td><td>Pan (also right-drag, or two fingers on a touch screen)</td></tr>
+    <tr><td>Pinch</td><td>Zoom on a touch screen</td></tr>
+    <tr><td>L</td><td>Show or hide box labels</td></tr>
+    <tr><td>Esc</td><td>Deselect</td></tr>
+  </table>
+  <div class="row"><button id="helpClose" class="primary" type="button">Got it</button></div>
+</dialog>
+
+<input id="fileIn" type="file" multiple accept=".zip,application/zip,image/*" hidden>
+<input id="jsonIn" type="file" accept=".json,application/json" hidden>
+
+<script>
+"use strict";
+
+/* ====================== constants and state ====================== */
+const $ = id => document.getElementById(id);
+const PALETTE = ["#f5a524", "#3ecf8e", "#5aa9ff", "#ff6b6b", "#c792ea", "#ffd866", "#4dd0e1", "#ff8a65", "#a5d6a7"];
+const colorOf = i => PALETTE[((i % PALETTE.length) + PALETTE.length) % PALETTE.length];
+const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+const MIN_BOX = 3;                       // smallest box side, in image pixels
+const IMG_RE = /\.(jpe?g|png|webp|bmp)$/i;
+const mimeFor = n => /\.png$/i.test(n) ? "image/png" : /\.webp$/i.test(n) ? "image/webp" : /\.bmp$/i.test(n) ? "image/bmp" : "image/jpeg";
+const baseName = p => p.split("/").pop();
+const tick = () => new Promise(r => setTimeout(r, 0));
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const clampNum = (v, a, b, d) => { v = parseFloat(v); return isFinite(v) ? clamp(v, a, b) : d; };
+
+const state = {
+  imgs: [],                              // { name, blob, w, h, t, thumb, _el, _n }
+  classes: ["bag", "board"],
+  labels: new Map(),                     // name -> { boxes: [{c,x,y,w,h}], done }
+  cur: -1, curClass: 0, sel: -1,
+  tool: "draw", showLabels: true,
+  split: { pct: 20, method: "video", negatives: true }
+};
+let busy = false;
+
+function labelOf(name) { let L = state.labels.get(name); if (!L) { L = { boxes: [], done: false }; state.labels.set(name, L); } return L; }
+const curImg = () => state.imgs[state.cur] || null;
+const curL = () => { const im = curImg(); return im ? labelOf(im.name) : { boxes: [], done: false }; };
+const statusOf = name => { const L = state.labels.get(name); return !L ? 0 : L.boxes.length ? 1 : L.done ? 2 : 0; };
+
+/* ====================== toast ====================== */
+let toastT = 0;
+function toast(text, kind, ms) {
+  const e = $("toast"); e.textContent = text; e.className = "toast show" + (kind ? " " + kind : "");
+  clearTimeout(toastT);
+  toastT = setTimeout(() => e.classList.remove("show"), ms || (kind === "bad" ? 7000 : 3500));
+}
+
+/* ====================== storage (IndexedDB) ====================== */
+let db = null, imgSaveFailed = false;
+function idbOpen() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open("bt-labeler", 1);
+    r.onupgradeneeded = () => { const d = r.result; d.createObjectStore("images", { keyPath: "name" }); d.createObjectStore("meta"); };
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+}
+const idbReq = rq => new Promise((res, rej) => { rq.onsuccess = () => res(rq.result); rq.onerror = () => rej(rq.error); });
+const txDone = tx => new Promise((res, rej) => { tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error); tx.onabort = () => rej(tx.error); });
+async function dbPutImage(rec) {
+  if (!db) return;
+  try { const tx = db.transaction("images", "readwrite"); tx.objectStore("images").put(rec); await txDone(tx); }
+  catch (e) { imgSaveFailed = true; console.error(e); }
+}
+function setSaveState(t) { $("saveState").textContent = t; }
+let saveTimer = 0;
+function scheduleSave() { if (!db) return; setSaveState("Saving…"); clearTimeout(saveTimer); saveTimer = setTimeout(saveMeta, 500); }
+async function saveMeta() {
+  if (!db) return;
+  try {
+    const labels = {};
+    state.labels.forEach((L, n) => { if (L.boxes.length || L.done) labels[n] = { boxes: L.boxes, done: L.done }; });
+    const im = curImg();
+    const tx = db.transaction("meta", "readwrite");
+    tx.objectStore("meta").put({ classes: state.classes, labels, cur: im ? im.name : null, split: state.split,
+      showLabels: state.showLabels, curClass: state.curClass }, "project");
+    await txDone(tx);
+    setSaveState(imgSaveFailed ? "Labels saved (images too big to keep)" : "Saved");
+  } catch (e) { setSaveState("Save failed"); console.error(e); }
+}
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") { clearTimeout(saveTimer); saveMeta(); } });
+
+/* ====================== ZIP reading and writing ====================== */
+async function readZip(file) {
+  const buf = await file.arrayBuffer();
+  const dv = new DataView(buf);
+  let eocd = -1;
+  for (let i = buf.byteLength - 22; i >= Math.max(0, buf.byteLength - 22 - 65535); i--) {
+    if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) throw new Error(file.name + " is not a valid ZIP");
+  const count = dv.getUint16(eocd + 10, true);
+  let p = dv.getUint32(eocd + 16, true);
+  const dec = new TextDecoder();
+  const entries = [];
+  for (let n = 0; n < count; n++) {
+    if (dv.getUint32(p, true) !== 0x02014b50) break;
+    const method = dv.getUint16(p + 10, true);
+    const csize = dv.getUint32(p + 20, true);
+    const nlen = dv.getUint16(p + 28, true), elen = dv.getUint16(p + 30, true), clen = dv.getUint16(p + 32, true);
+    const lho = dv.getUint32(p + 42, true);
+    const name = dec.decode(new Uint8Array(buf, p + 46, nlen));
+    entries.push({ name, method, csize, lho });
+    p += 46 + nlen + elen + clen;
+  }
+  return { buf, entries };
+}
+async function zipEntryBlob(zip, e) {
+  const dv = new DataView(zip.buf);
+  if (dv.getUint32(e.lho, true) !== 0x04034b50) throw new Error("bad ZIP entry " + e.name);
+  const nlen = dv.getUint16(e.lho + 26, true), elen = dv.getUint16(e.lho + 28, true);
+  const start = e.lho + 30 + nlen + elen;
+  const slice = zip.buf.slice(start, start + e.csize);
+  if (e.method === 0) return new Blob([slice], { type: mimeFor(e.name) });
+  if (e.method === 8) {
+    if (typeof DecompressionStream === "undefined") throw new Error("this browser cannot open compressed ZIPs");
+    const out = await new Response(new Blob([slice]).stream().pipeThrough(new DecompressionStream("deflate-raw"))).blob();
+    return new Blob([out], { type: mimeFor(e.name) });
+  }
+  throw new Error("unsupported ZIP method " + e.method);
+}
+function parseFrames(text) {
+  const lines = text.split(/\r?\n/).filter(Boolean);
+  const head = lines.shift().split(",");
+  const fi = head.indexOf("file"), ti = head.indexOf("time_sec");
+  const map = new Map();
+  if (fi < 0 || ti < 0) return map;
+  for (const ln of lines) { const c = ln.split(","); const t = parseFloat(c[ti]); if (isFinite(t)) map.set(c[fi], t); }
+  return map;
+}
+
+const CRC_TABLE = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(bytes) { let c = 0xFFFFFFFF; for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+class ZipBuilder {
+  constructor() { this.parts = []; this.entries = []; this.offset = 0; this.enc = new TextEncoder(); }
+  async addBlob(name, blob) { this.addBytes(name, new Uint8Array(await blob.arrayBuffer()), blob); }
+  addText(name, text) { this.addBytes(name, this.enc.encode(text)); }
+  addBytes(name, bytes, out) {
+    const nb = this.enc.encode(name), crc = crc32(bytes), size = bytes.length, d = new Date();
+    const t = ((d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1)) & 0xFFFF;
+    const dt = (((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate()) & 0xFFFF;
+    const h = new DataView(new ArrayBuffer(30));
+    h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true); h.setUint16(6, 0x0800, true); h.setUint16(8, 0, true);
+    h.setUint16(10, t, true); h.setUint16(12, dt, true); h.setUint32(14, crc, true); h.setUint32(18, size, true);
+    h.setUint32(22, size, true); h.setUint16(26, nb.length, true); h.setUint16(28, 0, true);
+    this.parts.push(h.buffer, nb, out || bytes);
+    this.entries.push({ nb, crc, size, t, dt, offset: this.offset });
+    this.offset += 30 + nb.length + size;
+  }
+  finish() {
+    const start = this.offset; let cd = 0;
+    for (const e of this.entries) {
+      const h = new DataView(new ArrayBuffer(46));
+      h.setUint32(0, 0x02014b50, true); h.setUint16(4, 20, true); h.setUint16(6, 20, true); h.setUint16(8, 0x0800, true);
+      h.setUint16(10, 0, true); h.setUint16(12, e.t, true); h.setUint16(14, e.dt, true); h.setUint32(16, e.crc, true);
+      h.setUint32(20, e.size, true); h.setUint32(24, e.size, true); h.setUint16(28, e.nb.length, true);
+      h.setUint32(42, e.offset, true);
+      this.parts.push(h.buffer, e.nb); cd += 46 + e.nb.length;
+    }
+    const end = new DataView(new ArrayBuffer(22));
+    end.setUint32(0, 0x06054b50, true); end.setUint16(8, this.entries.length, true); end.setUint16(10, this.entries.length, true);
+    end.setUint32(12, cd, true); end.setUint32(16, start, true);
+    this.parts.push(end.buffer);
+    return new Blob(this.parts, { type: "application/zip" });
+  }
+}
+function downloadBlob(blob, name) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 30000);
+}
+
+/* ====================== loading images ====================== */
+async function addImage(name, blob, times) {
+  const typed = blob.type ? blob : new Blob([blob], { type: mimeFor(name) });
+  const ex = state.imgs.find(i => i.name === name);
+  if (ex && ex.blob.size === typed.size) return "dup";
+  let nm = name;
+  if (ex) {
+    const m = name.match(/^(.*?)(\.[^.]+)?$/); let k = 2;
+    while (state.imgs.some(i => i.name === m[1] + "_" + k + (m[2] || ""))) k++;
+    nm = m[1] + "_" + k + (m[2] || "");
+  }
+  const b = await createImageBitmap(typed);
+  const w = b.width, h = b.height, tw = 96, th = Math.max(1, Math.round(tw * h / w));
+  const c = document.createElement("canvas"); c.width = tw; c.height = th;
+  c.getContext("2d").drawImage(b, 0, 0, tw, th); b.close();
+  const thumb = c.toDataURL("image/jpeg", 0.6);
+  const t = times && times.has(name) ? times.get(name) : null;
+  state.imgs.push({ name: nm, blob: typed, w, h, t, thumb });
+  await dbPutImage({ name: nm, blob: typed, w, h, t, thumb });
+  return "ok";
+}
+
+async function addFiles(fileList) {
+  const files = [...fileList];
+  if (!files.length || busy) return;
+  busy = true; setButtons();
+  let added = 0, dup = 0, bad = 0;
+  const curName = curImg() ? curImg().name : null;
+  try {
+    for (const f of files) {
+      const low = f.name.toLowerCase();
+      if (low.endsWith(".json")) { await importLabels(f); continue; }
+      if (low.endsWith(".zip")) {
+        toast("Opening " + f.name + "…", "", 600000);
+        const z = await readZip(f);
+        const csvE = z.entries.find(e => /(^|\/)frames\.csv$/i.test(e.name));
+        let times = null;
+        if (csvE) { try { times = parseFrames(await (await zipEntryBlob(z, csvE)).text()); } catch (e) { /* optional */ } }
+        const es = z.entries.filter(e => IMG_RE.test(e.name) && !e.name.endsWith("/") && !/(^|\/)(__MACOSX\/|\.)/.test(e.name));
+        for (let i = 0; i < es.length; i++) {
+          toast("Reading " + f.name + ": " + (i + 1) + " / " + es.length, "", 600000);
+          try {
+            const blob = await zipEntryBlob(z, es[i]);
+            (await addImage(baseName(es[i].name), blob, times)) === "dup" ? dup++ : added++;
+          } catch (e) { bad++; console.error(e); }
+          if (i % 8 === 7) await tick();
+        }
+      } else if (IMG_RE.test(low) || (f.type || "").startsWith("image/")) {
+        try { (await addImage(f.name, f, null)) === "dup" ? dup++ : added++; } catch (e) { bad++; console.error(e); }
+      }
+    }
+  } catch (e) { toast("Problem: " + e.message, "bad"); console.error(e); }
+  state.imgs.sort((a, b) => collator.compare(a.name, b.name));
+  buildFilm();
+  busy = false; setButtons();
+  if (state.imgs.length) {
+    let idx = curName ? state.imgs.findIndex(i => i.name === curName) : -1;
+    await goTo(idx >= 0 ? idx : 0);
+  }
+  if (added || dup || bad) {
+    toast((added ? "Added " + added + " image" + (added === 1 ? "" : "s") + ". " : "") +
+      (dup ? dup + " already open. " : "") + (bad ? bad + " could not be read." : ""), bad && !added ? "bad" : "");
+  }
+  updateAll(); scheduleSave();
+}
+
+/* ====================== filmstrip ====================== */
+function buildFilm() {
+  const f = $("film"); f.textContent = "";
+  state.imgs.forEach((im, i) => {
+    const d = document.createElement("div"); d.className = "fi"; d.dataset.i = i; d.title = im.name;
+    const img = new Image(); img.alt = ""; img.draggable = false; img.src = im.thumb || "";
+    const dot = document.createElement("i"); dot.className = "dot";
+    const n = document.createElement("b");
+    d.append(img, dot, n); f.append(d);
+    im._el = d; im._n = n;
+  });
+  state.imgs.forEach(refreshFi);
+  $("empty").style.display = state.imgs.length ? "none" : "";
+}
+$("film").addEventListener("click", e => { const d = e.target.closest(".fi"); if (d) goTo(+d.dataset.i); });
+function refreshFi(im) {
+  if (!im || !im._el) return;
+  const L = state.labels.get(im.name), nb = L ? L.boxes.length : 0;
+  im._el.className = "fi" + (nb ? " lab" : L && L.done ? " emp" : "") + (curImg() === im ? " on" : "");
+  im._n.textContent = nb || "";
+}
+
+/* ====================== image display ====================== */
+const bmpCache = new Map();               // name -> Promise<ImageBitmap>
+const getBmp = im => { let p = bmpCache.get(im.name); if (!p) { p = createImageBitmap(im.blob); bmpCache.set(im.name, p); } return p; };
+function trimCache(keep) { for (const [n, p] of bmpCache) if (!keep.has(n)) { bmpCache.delete(n); p.then(b => b.close()).catch(() => {}); } }
+let loadTok = 0;
+async function goTo(i) {
+  if (!state.imgs.length) return;
+  i = clamp(i, 0, state.imgs.length - 1);
+  const old = curImg();
+  const im = state.imgs[i], tok = ++loadTok;
+  let b;
+  try { b = await getBmp(im); } catch (e) { toast("Could not open " + im.name, "bad"); bmpCache.delete(im.name); return; }
+  if (tok !== loadTok) return;
+  state.cur = i; state.sel = -1; gesture = null; ptrs.clear();
+  bmp = b; fitView();
+  refreshFi(old); refreshFi(im);
+  im._el && im._el.scrollIntoView({ block: "nearest", inline: "nearest" });
+  const keep = new Set([im.name]);
+  [i - 1, i + 1].forEach(k => { if (state.imgs[k]) keep.add(state.imgs[k].name); });
+  trimCache(keep);
+  if (state.imgs[i + 1]) getBmp(state.imgs[i + 1]).catch(() => {});
+  updateAll(); requestDraw(); scheduleSave();
+}
+
+/* ====================== undo and edits ====================== */
+const hist = new Map();
+const H = name => { let h = hist.get(name); if (!h) { h = { u: [], r: [] }; hist.set(name, h); } return h; };
+const rawL = () => JSON.stringify({ boxes: curL().boxes, done: curL().done });
+function pushUndoRaw(raw) { const h = H(curImg().name); h.u.push(raw); if (h.u.length > 80) h.u.shift(); h.r.length = 0; }
+function applyRaw(raw) { const o = JSON.parse(raw), L = curL(); L.boxes = o.boxes; L.done = o.done; state.sel = -1; changed(); }
+function undo() { const im = curImg(); if (!im) return; const h = H(im.name); if (!h.u.length) return; h.r.push(rawL()); applyRaw(h.u.pop()); }
+function redo() { const im = curImg(); if (!im) return; const h = H(im.name); if (!h.r.length) return; h.u.push(rawL()); applyRaw(h.r.pop()); }
+function changed() { refreshFi(curImg()); updateAll(); scheduleSave(); requestDraw(); }
+function mutate(fn) { if (!curImg()) return; pushUndoRaw(rawL()); fn(curL()); changed(); }
+
+function addBox(b) { mutate(L => { L.boxes.push(b); L.done = false; state.sel = L.boxes.length - 1; }); }
+function deleteSel() { if (state.sel < 0) return; mutate(L => { L.boxes.splice(state.sel, 1); state.sel = -1; }); }
+function setClass(i) {
+  state.curClass = i;
+  if (state.sel >= 0 && curL().boxes[state.sel] && curL().boxes[state.sel].c !== i) mutate(L => { L.boxes[state.sel].c = i; });
+  else { updateAll(); scheduleSave(); requestDraw(); }
+}
+const iou = (a, b) => {
+  const x1 = Math.max(a.x, b.x), y1 = Math.max(a.y, b.y), x2 = Math.min(a.x + a.w, b.x + b.w), y2 = Math.min(a.y + a.h, b.y + b.h);
+  const inter = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+  return inter / (a.w * a.h + b.w * b.h - inter || 1);
+};
+function copyPrev() {
+  if (!curImg() || state.cur === 0) return toast("There is no previous image.");
+  const src = state.labels.get(state.imgs[state.cur - 1].name);
+  if (!src || !src.boxes.length) return toast("The previous image has no boxes.");
+  const L = curL(), W = bmp.width, Hh = bmp.height, add = [];
+  for (const b of src.boxes) {
+    const x = clamp(b.x, 0, W - MIN_BOX), y = clamp(b.y, 0, Hh - MIN_BOX);
+    const nb = { c: b.c, x, y, w: Math.min(b.w, W - x), h: Math.min(b.h, Hh - y) };
+    if (!L.boxes.some(o => o.c === nb.c && iou(o, nb) > 0.9)) add.push(nb);
+  }
+  if (!add.length) return toast("Those boxes are already here.");
+  mutate(L2 => { L2.boxes.push(...add); L2.done = false; });
+  toast("Copied " + add.length + " box" + (add.length === 1 ? "" : "es") + ". Adjust any that moved.");
+}
+function markEmpty() {
+  const L = curL();
+  if (!curImg()) return;
+  if (L.boxes.length) return toast("Delete the boxes first, or leave this image as is.");
+  mutate(L2 => { L2.done = !L2.done; });
+  if (curL().done) goTo(state.cur + 1);
+}
+function nextUnlabeled() {
+  const n = state.imgs.length;
+  for (let k = 1; k <= n; k++) { const i = (state.cur + k) % n; if (statusOf(state.imgs[i].name) === 0) return goTo(i); }
+  toast("Every image has boxes or is marked empty.");
+}
+let lastNudge = 0;
+function nudge(dx, dy) {
+  const L = curL(), b = L.boxes[state.sel];
+  if (!b) return;
+  const now = Date.now();
+  if (now - lastNudge > 600) pushUndoRaw(rawL());
+  lastNudge = now;
+  b.x = clamp(b.x + dx, 0, bmp.width - b.w); b.y = clamp(b.y + dy, 0, bmp.height - b.h);
+  changed();
+}
+
+/* ====================== side panels ====================== */
+function renderClasses() {
+  const counts = state.classes.map(() => 0);
+  state.labels.forEach(L => L.boxes.forEach(b => { if (counts[b.c] !== undefined) counts[b.c]++; }));
+  const box = $("classList"); box.textContent = "";
+  state.classes.forEach((name, i) => {
+    const row = document.createElement("div"); row.className = "cls" + (i === state.curClass ? " on" : "");
+    const sw = document.createElement("span"); sw.className = "sw"; sw.style.background = colorOf(i);
+    const nm = document.createElement("span"); nm.className = "nm"; nm.textContent = (i < 9 ? (i + 1) + ". " : "") + name;
+    const ct = document.createElement("span"); ct.className = "ct"; ct.textContent = counts[i];
+    const ed = document.createElement("button"); ed.className = "mini"; ed.textContent = "✎"; ed.title = "Rename"; ed.setAttribute("aria-label", "Rename " + name);
+    ed.onclick = ev => { ev.stopPropagation(); renameClass(i); };
+    row.append(sw, nm, ct, ed); row.onclick = () => setClass(i); box.append(row);
+  });
+}
+function renameClass(i) {
+  const n = (prompt("Class name", state.classes[i]) || "").trim();
+  if (!n || n === state.classes[i]) return;
+  if (state.classes.includes(n)) return toast("That class already exists.", "bad");
+  state.classes[i] = n; updateAll(); scheduleSave(); requestDraw();
+}
+$("addClass").onclick = addClassFromInput;
+$("newClass").addEventListener("keydown", e => { if (e.key === "Enter") addClassFromInput(); });
+function addClassFromInput() {
+  const inp = $("newClass"), n = inp.value.trim();
+  if (!n) return;
+  if (state.classes.includes(n)) return toast("That class already exists.", "bad");
+  state.classes.push(n); inp.value = ""; updateAll(); scheduleSave();
+}
+function renderBoxes() {
+  const L = curL(), box = $("boxList"); box.textContent = "";
+  if (!L.boxes.length) {
+    const p = document.createElement("div"); p.className = "muted";
+    p.textContent = curImg() ? (L.done ? "Marked as empty background." : "None yet. Drag on the picture to draw one.") : "";
+    box.append(p); return;
+  }
+  L.boxes.forEach((b, i) => {
+    const row = document.createElement("div"); row.className = "bx" + (i === state.sel ? " on" : "");
+    const sw = document.createElement("span"); sw.className = "sw"; sw.style.background = colorOf(b.c);
+    const nm = document.createElement("span"); nm.className = "nm";
+    nm.textContent = (state.classes[b.c] || "?") + "  " + Math.round(b.w) + "×" + Math.round(b.h);
+    const del = document.createElement("button"); del.className = "mini"; del.textContent = "✕"; del.setAttribute("aria-label", "Delete box");
+    del.onclick = ev => { ev.stopPropagation(); state.sel = i; deleteSel(); };
+    row.append(sw, nm, del); row.onclick = () => { state.sel = i; updateAll(); requestDraw(); }; box.append(row);
+  });
+}
+function updateAll() {
+  renderClasses(); renderBoxes();
+  const n = state.imgs.length; let lab = 0, emp = 0, nb = 0;
+  state.imgs.forEach(im => { const L = state.labels.get(im.name); if (!L) return; if (L.boxes.length) { lab++; nb += L.boxes.length; } else if (L.done) emp++; });
+  $("progress").textContent = n ? lab + " labeled, " + emp + " empty, " + (n - lab - emp) + " left of " + n + " images. " + nb + " boxes." : "No images yet.";
+  const im = curImg();
+  $("pos").textContent = im ? "(" + (state.cur + 1) + " / " + n + ")" : "";
+  $("info").textContent = im ? im.name + "  ·  " + im.w + "×" + im.h + (im.t != null ? "  ·  t = " + im.t.toFixed(2) + " s" : "") : "";
+  document.querySelectorAll("[data-tool]").forEach(b => b.classList.toggle("on", b.dataset.tool === state.tool));
+  const has = !!im, L = curL();
+  $("prevBtn").disabled = !has || state.cur <= 0; $("nextBtn").disabled = !has || state.cur >= n - 1;
+  $("copyBtn").disabled = !has || state.cur <= 0; $("emptyBtn").disabled = !has;
+  $("emptyBtn").textContent = L.done ? "Unmark empty" : "Mark empty";
+  const h = im ? H(im.name) : { u: [], r: [] };
+  $("undoBtn").disabled = !h.u.length; $("redoBtn").disabled = !h.r.length;
+  $("delBtn").disabled = state.sel < 0; $("nextUnBtn").disabled = !has;
+}
+function setButtons() {
+  ["openBtn", "loadLabelsBtn", "saveLabelsBtn", "exportBtn", "clearBtn"].forEach(id => { $(id).disabled = busy; });
+}
+function setTool(t) { state.tool = t; updateCursor(); updateAll(); requestDraw(); }
+document.querySelectorAll("[data-tool]").forEach(b => b.onclick = () => setTool(b.dataset.tool));
+$("prevBtn").onclick = () => goTo(state.cur - 1);
+$("nextBtn").onclick = () => goTo(state.cur + 1);
+$("copyBtn").onclick = copyPrev; $("emptyBtn").onclick = markEmpty; $("undoBtn").onclick = undo; $("redoBtn").onclick = redo;
+$("delBtn").onclick = deleteSel; $("nextUnBtn").onclick = nextUnlabeled;
+
+/* ====================== canvas view ====================== */
+const stage = $("stage"), ctx = stage.getContext("2d");
+const view = { s: 1, ox: 0, oy: 0, fitS: 1, w: 0, h: 0, dpr: 1 };
+let bmp = null, hover = null, spaceDown = false, gesture = null, drawQueued = false;
+const ptrs = new Map();
+
+function resizeStage() {
+  const r = $("wrap").getBoundingClientRect();
+  view.dpr = window.devicePixelRatio || 1; view.w = r.width; view.h = r.height;
+  stage.width = Math.max(1, Math.round(r.width * view.dpr)); stage.height = Math.max(1, Math.round(r.height * view.dpr));
+  stage.style.width = r.width + "px"; stage.style.height = r.height + "px";
+  if (bmp) { const wasFit = Math.abs(view.s - view.fitS) < 1e-6; if (wasFit) fitView(); else computeFit(); }
+  requestDraw();
+}
+function computeFit() { if (bmp) view.fitS = Math.min(view.w / bmp.width, view.h / bmp.height) * 0.98; }
+function fitView() { if (!bmp) return; computeFit(); view.s = view.fitS; view.ox = (view.w - bmp.width * view.s) / 2; view.oy = (view.h - bmp.height * view.s) / 2; }
+function zoomAt(px, py, f) {
+  if (!bmp) return;
+  const ns = clamp(view.s * f, view.fitS * 0.4, 80), k = ns / view.s;
+  view.ox = px - (px - view.ox) * k; view.oy = py - (py - view.oy) * k; view.s = ns; requestDraw();
+}
+$("zoomIn").onclick = () => zoomAt(view.w / 2, view.h / 2, 1.5);
+$("zoomOut").onclick = () => zoomAt(view.w / 2, view.h / 2, 1 / 1.5);
+$("zoomFit").onclick = () => { fitView(); requestDraw(); };
+$("zoom1").onclick = () => { if (bmp) zoomAt(view.w / 2, view.h / 2, 1 / view.s); };
+new ResizeObserver(resizeStage).observe($("wrap"));
+window.addEventListener("resize", resizeStage);
+
+const toImg = (px, py) => ({ x: (px - view.ox) / view.s, y: (py - view.oy) / view.s });
+const clampPt = p => ({ x: clamp(p.x, 0, bmp.width), y: clamp(p.y, 0, bmp.height) });
+const localPt = e => { const r = stage.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+function requestDraw() { if (drawQueued) return; drawQueued = true; requestAnimationFrame(() => { drawQueued = false; draw(); }); }
+
+const HANDLES = ["nw", "ne", "se", "sw", "n", "e", "s", "w"];
+function handlePts(b) {
+  const x2 = b.x + b.w, y2 = b.y + b.h, mx = b.x + b.w / 2, my = b.y + b.h / 2;
+  return { nw: [b.x, b.y], ne: [x2, b.y], se: [x2, y2], sw: [b.x, y2], n: [mx, b.y], e: [x2, my], s: [mx, y2], w: [b.x, my] };
+}
+function hitHandle(px, py, type) {
+  const b = curL().boxes[state.sel];
+  if (!b) return null;
+  const r = type === "mouse" ? 12 : 22, pts = handlePts(b);
+  for (const h of HANDLES) {
+    const sx = view.ox + pts[h][0] * view.s, sy = view.oy + pts[h][1] * view.s;
+    if (Math.hypot(sx - px, sy - py) <= r) return h;
+  }
+  return null;
+}
+function boxAt(ix, iy) {
+  let best = -1, area = Infinity; const bs = curL().boxes;
+  for (let i = 0; i < bs.length; i++) {
+    const b = bs[i];
+    if (ix >= b.x && ix <= b.x + b.w && iy >= b.y && iy <= b.y + b.h && b.w * b.h <= area) { best = i; area = b.w * b.h; }
+  }
+  return best;
+}
+
+function draw() {
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, stage.width, stage.height);
+  if (!bmp) return;
+  const { s, ox, oy, dpr } = view;
+  ctx.setTransform(dpr * s, 0, 0, dpr * s, dpr * ox, dpr * oy);
+  ctx.imageSmoothingEnabled = s < 4;
+  ctx.drawImage(bmp, 0, 0);
+  const bs = curL().boxes;
+  for (let i = 0; i < bs.length; i++) {
+    const b = bs[i], col = colorOf(b.c);
+    if (i === state.sel) { ctx.fillStyle = col + "33"; ctx.fillRect(b.x, b.y, b.w, b.h); }
+    ctx.lineWidth = 4 / s; ctx.strokeStyle = "rgba(0,0,0,.65)"; ctx.strokeRect(b.x, b.y, b.w, b.h);
+    ctx.lineWidth = (i === state.sel ? 3 : 2) / s; ctx.strokeStyle = col; ctx.strokeRect(b.x, b.y, b.w, b.h);
+  }
+  const g = gesture;
+  if (g && g.kind === "draw" && g.moved) {
+    const x = Math.min(g.x0, g.x1), y = Math.min(g.y0, g.y1), w = Math.abs(g.x1 - g.x0), h = Math.abs(g.y1 - g.y0);
+    ctx.setLineDash([6 / s, 4 / s]); ctx.lineWidth = 2 / s; ctx.strokeStyle = colorOf(state.curClass); ctx.strokeRect(x, y, w, h); ctx.setLineDash([]);
+  }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (state.showLabels) {
+    ctx.font = "600 12px system-ui, sans-serif"; ctx.textBaseline = "middle";
+    for (const b of bs) {
+      const t = state.classes[b.c] || "?", w = ctx.measureText(t).width + 8;
+      const x = ox + b.x * s, y = oy + b.y * s, ty = y - 8 < 0 ? y + 9 : y - 9;
+      ctx.fillStyle = colorOf(b.c); ctx.fillRect(x, ty - 8, w, 16);
+      ctx.fillStyle = "#111"; ctx.fillText(t, x + 4, ty);
+    }
+  }
+  const sb = bs[state.sel];
+  if (sb) {
+    const pts = handlePts(sb);
+    for (const h of HANDLES) {
+      const sx = ox + pts[h][0] * s, sy = oy + pts[h][1] * s;
+      ctx.fillStyle = "#fff"; ctx.strokeStyle = colorOf(sb.c); ctx.lineWidth = 2;
+      ctx.fillRect(sx - 5, sy - 5, 10, 10); ctx.strokeRect(sx - 5, sy - 5, 10, 10);
+    }
+  }
+  if (hover && hover.type === "mouse" && state.tool === "draw" && !spaceDown && !(g && g.kind !== "draw")) {
+    ctx.strokeStyle = "rgba(255,255,255,.55)"; ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
+    ctx.beginPath(); ctx.moveTo(hover.x, 0); ctx.lineTo(hover.x, view.h); ctx.moveTo(0, hover.y); ctx.lineTo(view.w, hover.y); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+}
+function updateCursor() {
+  stage.style.cursor = spaceDown || state.tool === "pan" ? (gesture && gesture.kind === "pan" ? "grabbing" : "grab") : state.tool === "draw" ? "crosshair" : "default";
+}
+
+/* ====================== pointer interaction ====================== */
+stage.addEventListener("contextmenu", e => e.preventDefault());
+stage.addEventListener("wheel", e => {
+  if (!bmp) return; e.preventDefault();
+  const p = localPt(e);
+  zoomAt(p.x, p.y, Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015)));
+}, { passive: false });
+
+function startPinch() {
+  const [a, b] = [...ptrs.values()];
+  gesture = { kind: "pinch", d0: Math.hypot(a.x - b.x, a.y - b.y) || 1, s0: view.s, cx0: (a.x + b.x) / 2, cy0: (a.y + b.y) / 2, ox0: view.ox, oy0: view.oy };
+}
+function movePinch() {
+  const [a, b] = [...ptrs.values()], g = gesture;
+  const d = Math.hypot(a.x - b.x, a.y - b.y) || 1, cx = (a.x + b.x) / 2, cy = (a.y + b.y) / 2;
+  const ns = clamp(g.s0 * d / g.d0, view.fitS * 0.4, 80);
+  const ix = (g.cx0 - g.ox0) / g.s0, iy = (g.cy0 - g.oy0) / g.s0;
+  view.s = ns; view.ox = cx - ix * ns; view.oy = cy - iy * ns; requestDraw();
+}
+
+stage.addEventListener("pointerdown", e => {
+  if (!bmp) return;
+  try { stage.setPointerCapture(e.pointerId); } catch (err) { /* synthetic or already released */ }
+  const p = localPt(e);
+  ptrs.set(e.pointerId, { x: p.x, y: p.y, type: e.pointerType });
+  if (ptrs.size === 2) { startPinch(); requestDraw(); return; }
+  if (ptrs.size > 2) return;
+  if (e.button === 1 || e.button === 2 || spaceDown || state.tool === "pan") {
+    gesture = { kind: "pan", sx: p.x, sy: p.y, ox: view.ox, oy: view.oy }; updateCursor(); return;
+  }
+  const ip = toImg(p.x, p.y), cp = clampPt(ip);
+  const hd = hitHandle(p.x, p.y, e.pointerType);
+  if (hd) {
+    const b = curL().boxes[state.sel];
+    gesture = { kind: "resize", h: hd, start: { ...b }, before: rawL() };
+    return;
+  }
+  if (state.tool === "select") {
+    const k = boxAt(ip.x, ip.y);
+    state.sel = k; updateAll();
+    if (k >= 0) gesture = { kind: "move", sx: ip.x, sy: ip.y, start: { ...curL().boxes[k] }, before: rawL() };
+    requestDraw(); return;
+  }
+  gesture = { kind: "draw", x0: cp.x, y0: cp.y, x1: cp.x, y1: cp.y, sx: p.x, sy: p.y, moved: false, ix: ip.x, iy: ip.y };
+});
+
+stage.addEventListener("pointermove", e => {
+  const p = localPt(e);
+  if (ptrs.has(e.pointerId)) { const q = ptrs.get(e.pointerId); q.x = p.x; q.y = p.y; }
+  else hover = { x: p.x, y: p.y, type: e.pointerType };
+  if (e.pointerType === "mouse") hover = { x: p.x, y: p.y, type: "mouse" };
+  const g = gesture;
+  if (!g || !bmp) { if (hover) requestDraw(); return; }
+  if (g.kind === "pinch") { if (ptrs.size >= 2) movePinch(); return; }
+  if (g.kind === "pan") { view.ox = g.ox + (p.x - g.sx); view.oy = g.oy + (p.y - g.sy); requestDraw(); return; }
+  const ip = toImg(p.x, p.y), cp = clampPt(ip);
+  if (g.kind === "draw") {
+    g.x1 = cp.x; g.y1 = cp.y;
+    if (Math.hypot(p.x - g.sx, p.y - g.sy) > 5) g.moved = true;
+  } else if (g.kind === "move") {
+    const b = curL().boxes[state.sel];
+    b.x = clamp(g.start.x + ip.x - g.sx, 0, bmp.width - b.w); b.y = clamp(g.start.y + ip.y - g.sy, 0, bmp.height - b.h);
+  } else if (g.kind === "resize") {
+    const b = curL().boxes[state.sel], s0 = g.start;
+    let x1 = s0.x, y1 = s0.y, x2 = s0.x + s0.w, y2 = s0.y + s0.h;
+    if (g.h.includes("w")) x1 = cp.x;
+    if (g.h.includes("e")) x2 = cp.x;
+    if (g.h.includes("n")) y1 = cp.y;
+    if (g.h.includes("s")) y2 = cp.y;
+    b.x = Math.min(x1, x2); b.y = Math.min(y1, y2); b.w = Math.abs(x2 - x1); b.h = Math.abs(y2 - y1);
+  }
+  requestDraw();
+});
+
+function endPointer(e) {
+  const p = localPt(e);
+  ptrs.delete(e.pointerId);
+  try { stage.releasePointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+  const g = gesture;
+  if (!g) return;
+  if (g.kind === "pinch") { if (ptrs.size < 2) gesture = null; requestDraw(); return; }
+  if (e.type === "pointercancel") { gesture = null; requestDraw(); return; }
+  gesture = null; updateCursor();
+  if (g.kind === "draw") {
+    const bx = Math.min(g.x0, g.x1), by = Math.min(g.y0, g.y1), bw = Math.abs(g.x1 - g.x0), bh = Math.abs(g.y1 - g.y0);
+    if (g.moved && bw >= MIN_BOX && bh >= MIN_BOX) addBox({ c: state.curClass, x: bx, y: by, w: bw, h: bh });
+    else { state.sel = boxAt(g.ix, g.iy); updateAll(); requestDraw(); }
+  } else if (g.kind === "move" || g.kind === "resize") {
+    const b = curL().boxes[state.sel];
+    if (b) {
+      if (b.w < MIN_BOX) b.w = MIN_BOX; if (b.h < MIN_BOX) b.h = MIN_BOX;
+      b.x = clamp(b.x, 0, bmp.width - b.w); b.y = clamp(b.y, 0, bmp.height - b.h);
+    }
+    if (rawL() !== g.before) { pushUndoRaw(g.before); changed(); } else requestDraw();
+  }
+}
+stage.addEventListener("pointerup", endPointer);
+stage.addEventListener("pointercancel", endPointer);
+stage.addEventListener("pointerleave", e => { if (e.pointerType === "mouse") { hover = null; requestDraw(); } });
+
+/* ====================== keyboard ====================== */
+window.addEventListener("keydown", e => {
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || document.querySelector("dialog[open]")) return;
+  const k = e.key, low = k.toLowerCase();
+  if (k === " ") { spaceDown = true; updateCursor(); e.preventDefault(); return; }
+  if ((e.ctrlKey || e.metaKey) && low === "z") { e.shiftKey ? redo() : undo(); e.preventDefault(); return; }
+  if ((e.ctrlKey || e.metaKey) && low === "y") { redo(); e.preventDefault(); return; }
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  if (/^[1-9]$/.test(k)) { const i = +k - 1; if (i < state.classes.length) setClass(i); return; }
+  const step = e.shiftKey ? 10 : 1;
+  switch (k) {
+    case "ArrowLeft": state.sel >= 0 ? nudge(-step, 0) : goTo(state.cur - 1); e.preventDefault(); return;
+    case "ArrowRight": state.sel >= 0 ? nudge(step, 0) : goTo(state.cur + 1); e.preventDefault(); return;
+    case "ArrowUp": if (state.sel >= 0) { nudge(0, -step); e.preventDefault(); } return;
+    case "ArrowDown": if (state.sel >= 0) { nudge(0, step); e.preventDefault(); } return;
+    case "PageUp": goTo(state.cur - 1); e.preventDefault(); return;
+    case "PageDown": goTo(state.cur + 1); e.preventDefault(); return;
+    case "Delete": case "Backspace": deleteSel(); e.preventDefault(); return;
+    case "Escape": state.sel = -1; gesture = null; updateAll(); requestDraw(); return;
+    case "+": case "=": zoomAt(view.w / 2, view.h / 2, 1.5); return;
+    case "-": case "_": zoomAt(view.w / 2, view.h / 2, 1 / 1.5); return;
+    case "0": fitView(); requestDraw(); return;
+    case "?": $("helpDlg").showModal(); return;
+  }
+  switch (low) {
+    case "b": setTool("draw"); break;
+    case "v": setTool("select"); break;
+    case "h": setTool("pan"); break;
+    case "a": goTo(state.cur - 1); break;
+    case "d": goTo(state.cur + 1); break;
+    case "c": copyPrev(); break;
+    case "e": markEmpty(); break;
+    case "u": nextUnlabeled(); break;
+    case "l": state.showLabels = !state.showLabels; scheduleSave(); requestDraw(); break;
+  }
+});
+window.addEventListener("keyup", e => { if (e.key === " ") { spaceDown = false; updateCursor(); requestDraw(); } });
+document.addEventListener("click", e => { const b = e.target.closest("button"); if (b) b.blur(); });
+
+/* ====================== labels file (save and load) ====================== */
+function saveLabelsFile() {
+  const images = {};
+  state.labels.forEach((L, name) => {
+    if (!L.boxes.length && !L.done) return;
+    const im = state.imgs.find(i => i.name === name);
+    images[name] = { w: im ? im.w : null, h: im ? im.h : null, done: L.done, boxes: L.boxes.map(b => ({ c: b.c, x: +b.x.toFixed(2), y: +b.y.toFixed(2), w: +b.w.toFixed(2), h: +b.h.toFixed(2) })) };
+  });
+  if (!Object.keys(images).length) return toast("No labels to save yet.");
+  const d = new Date(), p2 = n => String(n).padStart(2, "0");
+  const stamp = d.getFullYear() + p2(d.getMonth() + 1) + p2(d.getDate()) + "-" + p2(d.getHours()) + p2(d.getMinutes());
+  downloadBlob(new Blob([JSON.stringify({ format: "bt-labeler", version: 1, classes: state.classes, images }, null, 1)], { type: "application/json" }), "bt-labels-" + stamp + ".json");
+  toast("Saved " + Object.keys(images).length + " labeled images to a file. Keep it with your ZIPs in Drive.");
+}
+async function importLabels(file) {
+  let o;
+  try { o = JSON.parse(await file.text()); } catch (e) { return toast("That file isn't valid JSON.", "bad"); }
+  if (!o || o.format !== "bt-labeler" || typeof o.images !== "object") return toast("That doesn't look like a BT Labeler labels file.", "bad");
+  const map = (o.classes || []).map(n => { let i = state.classes.indexOf(n); if (i < 0) { state.classes.push(n); i = state.classes.length - 1; } return i; });
+  const have = new Set(state.imgs.map(i => i.name));
+  let n = 0, pending = 0;
+  for (const [name, v] of Object.entries(o.images)) {
+    const boxes = (v.boxes || []).filter(b => map[b.c] !== undefined && [b.x, b.y, b.w, b.h].every(Number.isFinite) && b.w > 0 && b.h > 0)
+      .map(b => ({ c: map[b.c], x: +b.x, y: +b.y, w: +b.w, h: +b.h }));
+    state.labels.set(name, { boxes, done: !!v.done && !boxes.length });
+    n++; if (!have.has(name)) pending++;
+  }
+  state.imgs.forEach(refreshFi); updateAll(); requestDraw(); scheduleSave();
+  toast("Loaded labels for " + n + " images" + (pending ? ". " + pending + " are waiting for their pictures: open those ZIPs." : "."));
+}
+
+/* ====================== YOLO export ====================== */
+const groupOf = name => name.replace(/_\d{4,}_t[\d.]+s(?=\.[^.]+$)/i, "").replace(/\.[^.]+$/, "");
+function hash(s) { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); } return h >>> 0; }
+const exportItems = neg => state.imgs.filter(im => { const L = state.labels.get(im.name); return L && (L.boxes.length || (neg && L.done)); });
+function makeSplit(items, pct, method) {
+  const val = new Set();
+  if (pct <= 0 || items.length < 2) return val;
+  const target = clamp(Math.round(items.length * pct / 100), 1, items.length - 1);
+  if (method === "video") {
+    const groups = new Map();
+    for (const it of items) { const g = groupOf(it.name); if (!groups.has(g)) groups.set(g, []); groups.get(g).push(it); }
+    if (groups.size >= 3) {
+      let n = 0;
+      for (const k of [...groups.keys()].sort((a, b) => hash(a) - hash(b))) {
+        if (n >= target) break;
+        if (n + groups.get(k).length >= items.length) continue;
+        groups.get(k).forEach(it => val.add(it.name)); n += groups.get(k).length;
+      }
+      return val;
+    }
+    method = "tail";
+  }
+  if (method === "tail") { items.slice(items.length - target).forEach(it => val.add(it.name)); return val; }
+  items.map(it => it.name).sort((a, b) => hash(a) - hash(b)).slice(0, target).forEach(n => val.add(n));
+  return val;
+}
+function exportSettings() {
+  return { pct: clampNum($("expPct").value, 0, 60, 20), method: $("expMethod").value, neg: $("expNeg").checked };
+}
+function refreshExportPreview() {
+  const { pct, method, neg } = exportSettings();
+  const items = exportItems(neg), val = makeSplit(items, pct, method);
+  const groups = new Set(items.map(i => groupOf(i.name)));
+  let nb = 0; items.forEach(im => { nb += state.labels.get(im.name).boxes.length; });
+  const lines = [items.length + " images (" + (items.length - val.size) + " train, " + val.size + " validation) from " + groups.size + " video" + (groups.size === 1 ? "" : "s") + ", " + nb + " boxes."];
+  if (method === "video" && groups.size < 3 && pct > 0) lines.push("Fewer than 3 videos, so the last part of the list is used for validation instead.");
+  const unused = state.classes.filter((c, i) => !items.some(im => state.labels.get(im.name).boxes.some(b => b.c === i)));
+  if (unused.length) lines.push("No boxes yet for: " + unused.join(", ") + ".");
+  $("expInfo").textContent = lines.join(" ");
+  $("expGo").disabled = !items.length;
+}
+function openExport() {
+  if (!exportItems(true).length) return toast("Nothing to export yet. Draw some boxes first.");
+  $("expPct").value = state.split.pct; $("expMethod").value = state.split.method; $("expNeg").checked = state.split.negatives;
+  $("expStatus").textContent = ""; refreshExportPreview(); $("exportDlg").showModal();
+}
+["expPct", "expMethod", "expNeg"].forEach(id => $(id).addEventListener("input", refreshExportPreview));
+async function doExport() {
+  const { pct, method, neg } = exportSettings();
+  state.split = { pct, method, negatives: neg }; scheduleSave();
+  const items = exportItems(neg), val = makeSplit(items, pct, method);
+  const zip = new ZipBuilder(), used = new Set(), st = $("expStatus");
+  $("expGo").disabled = true;
+  try {
+    for (let i = 0; i < items.length; i++) {
+      const im = items[i], L = state.labels.get(im.name), split = val.has(im.name) ? "val" : "train";
+      let safe = im.name.replace(/[^\w.\-]+/g, "_"), k = 2;
+      const m = safe.match(/^(.*?)(\.[^.]+)?$/);
+      while (used.has(safe.toLowerCase())) safe = m[1] + "_" + (k++) + (m[2] || "");
+      used.add(safe.toLowerCase());
+      const stem = safe.replace(/\.[^.]+$/, "");
+      await zip.addBlob("images/" + split + "/" + safe, im.blob);
+      const lines = L.boxes.map(b => {
+        const cx = clamp((b.x + b.w / 2) / im.w, 0, 1), cy = clamp((b.y + b.h / 2) / im.h, 0, 1);
+        const w = clamp(b.w / im.w, 0, 1), h = clamp(b.h / im.h, 0, 1);
+        return b.c + " " + cx.toFixed(6) + " " + cy.toFixed(6) + " " + w.toFixed(6) + " " + h.toFixed(6);
+      });
+      zip.addText("labels/" + split + "/" + stem + ".txt", lines.length ? lines.join("\n") + "\n" : "");
+      st.textContent = "Packing " + (i + 1) + " / " + items.length + "…";
+      if (i % 5 === 4) await tick();
+    }
+    const names = state.classes.map((c, i) => "  " + i + ": " + JSON.stringify(c)).join("\n");
+    zip.addText("data.yaml", "# BT Labeler export (YOLO format)\npath: .\ntrain: images/train\nval: images/" + (val.size ? "val" : "train") + "\nnc: " + state.classes.length + "\nnames:\n" + names + "\n");
+    zip.addText("classes.txt", state.classes.join("\n") + "\n");
+    const blob = zip.finish();
+    downloadBlob(blob, "bt-yolo-dataset-" + items.length + "imgs.zip");
+    st.textContent = "Done. " + (blob.size / 1048576).toFixed(1) + " MB. Save it to your Drive folder.";
+  } catch (e) { st.textContent = "Problem: " + e.message; console.error(e); }
+  $("expGo").disabled = false;
+}
+$("exportBtn").onclick = openExport; $("expGo").onclick = doExport; $("expCancel").onclick = () => $("exportDlg").close();
+$("helpBtn").onclick = () => $("helpDlg").showModal(); $("helpClose").onclick = () => $("helpDlg").close();
+
+/* ====================== open, clear, drag and drop ====================== */
+$("openBtn").onclick = $("emptyOpen").onclick = () => $("fileIn").click();
+$("fileIn").addEventListener("change", e => { const f = [...e.target.files]; e.target.value = ""; addFiles(f); });
+$("loadLabelsBtn").onclick = () => $("jsonIn").click();
+$("jsonIn").addEventListener("change", async e => { const f = e.target.files[0]; e.target.value = ""; if (f) await importLabels(f); });
+$("saveLabelsBtn").onclick = saveLabelsFile;
+$("clearBtn").onclick = async () => {
+  if (!confirm("Remove all images and labels from this browser? Save your labels file first if you want to keep them.")) return;
+  state.imgs = []; state.labels = new Map(); state.cur = -1; state.sel = -1; bmp = null; gesture = null; hist.clear();
+  trimCache(new Set());
+  if (db) { try { const tx = db.transaction(["images", "meta"], "readwrite"); tx.objectStore("images").clear(); tx.objectStore("meta").clear(); await txDone(tx); imgSaveFailed = false; } catch (e) { console.error(e); } }
+  buildFilm(); updateAll(); requestDraw(); setSaveState(db ? "Saved" : "");
+};
+window.addEventListener("dragover", e => { e.preventDefault(); });
+window.addEventListener("drop", e => { e.preventDefault(); if (e.dataTransfer && e.dataTransfer.files.length) addFiles(e.dataTransfer.files); });
+
+/* ====================== startup ====================== */
+async function init() {
+  try { db = await idbOpen(); } catch (e) { db = null; }
+  setSaveState(db ? "" : "Autosave unavailable here");
+  try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch (e) { /* optional */ }
+  let curName = null;
+  if (db) {
+    try {
+      const tx = db.transaction(["meta", "images"]);
+      const r1 = idbReq(tx.objectStore("meta").get("project")), r2 = idbReq(tx.objectStore("images").getAll());
+      const [meta, recs] = await Promise.all([r1, r2]);
+      if (meta) {
+        if (Array.isArray(meta.classes) && meta.classes.length) state.classes = meta.classes.map(String);
+        for (const [n, L] of Object.entries(meta.labels || {})) state.labels.set(n, { boxes: L.boxes || [], done: !!L.done });
+        if (meta.split) state.split = Object.assign(state.split, meta.split);
+        if (typeof meta.showLabels === "boolean") state.showLabels = meta.showLabels;
+        if (Number.isInteger(meta.curClass) && meta.curClass < state.classes.length) state.curClass = meta.curClass;
+        curName = meta.cur;
+      }
+      state.imgs = recs.map(r => ({ name: r.name, blob: r.blob, w: r.w, h: r.h, t: r.t, thumb: r.thumb }))
+        .sort((a, b) => collator.compare(a.name, b.name));
+    } catch (e) { console.error(e); }
+  }
+  buildFilm(); resizeStage(); setButtons(); updateAll(); updateCursor();
+  if (state.imgs.length) { const i = curName ? state.imgs.findIndex(x => x.name === curName) : -1; await goTo(i >= 0 ? i : 0); }
+}
+init();
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+}
+</script>
+</body>
+</html>
