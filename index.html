@@ -51,6 +51,15 @@
   #stage { position: absolute; inset: 0; display: block; touch-action: none; }
   .hud { position: absolute; right: 8px; top: 8px; display: flex; gap: 6px; }
   .hud button { background: rgba(16,26,36,.85); min-width: 38px; padding: 4px 10px; }
+  .grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .stb { font-weight: 700; padding: 6px 4px; }
+  .stb small { font-weight: 500; opacity: .8; font-size: 10px; display: block; }
+  .stb.r.on { background: #ff2d2d; color: #fff; outline: none; }
+  .stb.m.on { background: #3ecf8e; color: #08210f; outline: none; }
+  .stb.h.on { background: #e8eef5; color: #111; outline: none; }
+  .stb.r { border-color: #ff2d2d; } .stb.m { border-color: #3ecf8e; } .stb.h { border-color: #e8eef5; }
+  #throwNow { font-weight: 700; margin-bottom: 6px; padding: 6px 8px; border-radius: 8px; border: 2px solid var(--accent); }
+  .chk { display: flex; gap: 6px; align-items: center; margin-top: 8px; font-size: 12px; }
   .hud button.on { background: var(--accent); color: #1a1200; outline: none; }
   #info { position: absolute; left: 8px; bottom: 8px; right: 8px; font-size: 12px; color: var(--muted); pointer-events: none;
     text-shadow: 0 1px 2px #000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -94,8 +103,8 @@
     .top { gap: 6px; }
     .top strong, .lg { display: none; }
     .top button { padding: 6px 10px; min-height: 36px; }
-    #secTool { order: 1; } #secClasses { order: 2; } #secImage { order: 3; }
-    #secBoxes { order: 4; } #secProgress { order: 5; } #secProject { order: 6; }
+    #secTool { order: 1; } #secThrow { order: 2; } #secClasses { order: 3; } #secImage { order: 4; }
+    #secBoxes { order: 5; } #secProgress { order: 6; } #secProject { order: 7; }
     #classList { display: flex; flex-wrap: wrap; gap: 6px; }
     #classList .cls { margin: 0; flex: 1 1 40%; }
   }
@@ -144,12 +153,26 @@
         <button id="toolPan" data-tool="pan" type="button">Pan</button>
       </div>
     </section>
+    <section id="secThrow">
+      <h3>Now drawing</h3>
+      <div id="throwNow"></div>
+      <div class="grid2"><button id="bagPrev" type="button">&#9664; Prev bag</button><button id="bagNext" type="button">Next bag &#9654;</button></div>
+      <div class="grid2" style="margin-top:6px"><button id="pl1" type="button">Player 1</button><button id="pl2" type="button">Player 2</button></div>
+      <div class="grid4" style="margin-top:6px"><button id="bn1" type="button">Bag 1</button><button id="bn2" type="button">Bag 2</button><button id="bn3" type="button">Bag 3</button><button id="bn4" type="button">Bag 4</button></div>
+      <button id="applyBag" type="button" style="margin-top:6px;width:100%" title="Give the selected box this player and bag number (T)">Set selected box to this bag (T)</button>
+      <label class="chk"><input type="checkbox" id="autoCarry" checked> Auto-carry resting bags and boards</label>
+      <div id="bagCount" class="muted" style="margin-top:6px"></div>
+    </section>
     <section id="secImage">
       <h3>Image <span id="pos"></span></h3>
       <div class="grid2"><button id="prevBtn" type="button">&#9664; Prev</button><button id="nextBtn" type="button">Next &#9654;</button></div>
       <div class="grid2" style="margin-top:6px"><button id="copyBtn" type="button">Copy prev boxes</button><button id="emptyBtn" type="button">Mark empty</button></div>
       <div class="grid3" style="margin-top:6px"><button id="undoBtn" type="button">Undo</button><button id="redoBtn" type="button">Redo</button><button id="delBtn" type="button">Delete</button></div>
-      <button id="restBtn" type="button" style="margin-top:6px;width:100%" title="Flag the selected bag as resting (R)">Mark resting (R)</button>
+      <div class="grid3" style="margin-top:6px">
+        <button id="stRest" class="stb r" type="button" title="Resting: this bag has stopped (R)">R<small>resting</small></button>
+        <button id="stMoved" class="stb m" type="button" title="Moved: a resting bag got bumped (M)">M<small>moved</small></button>
+        <button id="stHole" class="stb h" type="button" title="In the hole (X)">X<small>in hole</small></button>
+      </div>
       <button id="nextUnBtn" type="button" style="margin-top:6px;width:100%">Next unlabeled</button>
     </section>
     <section id="secClasses">
@@ -168,6 +191,8 @@
     <section id="secProject">
       <h3>Project</h3>
       <button id="clearBtn" type="button">Clear project</button>
+      <button id="reloadBtn" type="button" style="margin-top:6px">Get latest version</button>
+      <div id="verTxt" class="muted" style="margin-top:6px"></div>
     </section>
   </aside>
 </main>
@@ -213,7 +238,12 @@
     <tr><td>Wheel, + / &minus;, 0</td><td>Zoom, zoom, fit to window</td></tr>
     <tr><td>Space + drag</td><td>Pan (also right-drag, or two fingers on a touch screen)</td></tr>
     <tr><td>Pinch</td><td>Zoom on a touch screen</td></tr>
-    <tr><td>R</td><td>Flag the selected bag as resting (red). Press again to clear</td></tr>
+    <tr><td>R</td><td>Selected bag has stopped: resting (red). Press again to clear</td></tr>
+    <tr><td>M</td><td>A resting bag got bumped: moved (green)</td></tr>
+    <tr><td>X</td><td>Selected bag went in the hole</td></tr>
+    <tr><td>N / Shift+N</td><td>Next / previous bag to draw (Player 1 bag 1, Player 2 bag 1, ...)</td></tr>
+    <tr><td>P</td><td>Switch between Player 1 and Player 2</td></tr>
+    <tr><td>T</td><td>Give the selected box the bag chosen under "Now drawing"</td></tr>
     <tr><td>Z</td><td>Hold view: keep zoom and position on the next image</td></tr>
     <tr><td>L</td><td>Show or hide box labels</td></tr>
     <tr><td>Esc</td><td>Deselect</td></tr>
@@ -229,7 +259,25 @@
 
 /* ====================== constants and state ====================== */
 const $ = id => document.getElementById(id);
-const PALETTE = ["#f5a524", "#3ecf8e", "#5aa9ff", "#ff6b6b", "#c792ea", "#ffd866", "#4dd0e1", "#ff8a65", "#a5d6a7"];
+const PALETTE = ["#f5a524", "#c792ea", "#5aa9ff", "#ff6b6b", "#3ecf8e", "#ffd866", "#4dd0e1", "#ff8a65", "#a5d6a7"];
+const APP_VERSION = "4";
+const P_COL = { 1: "#f5a524", 2: "#5aa9ff" };          // player colours
+const REST_COLOR = "#ff2d2d", SHIFT_COLOR = "#3ecf8e", HOLE_COLOR = "#e8eef5";
+const isBag = b => b.c === 0;
+function boxColor(b) {
+  if (!isBag(b)) return colorOf(b.c);
+  if (b.st === 1) return REST_COLOR;
+  if (b.st === 2) return SHIFT_COLOR;
+  if (b.st === 3) return HOLE_COLOR;
+  return b.p ? P_COL[b.p] : colorOf(0);
+}
+function boxTag(b) {
+  let t = state.classes[b.c] || "?";
+  if (isBag(b) && b.p) t = "P" + b.p + " B" + b.n;
+  if (isBag(b)) t += b.st === 1 ? " · resting" : b.st === 2 ? " · moved" : b.st === 3 ? " · in hole" : "";
+  return t;
+}
+const grpName = n => n.replace(/_\d{4,}_t[\d.]+s(?=\.[^.]+$)/i, "").replace(/\.[^.]+$/, "");
 const colorOf = i => PALETTE[((i % PALETTE.length) + PALETTE.length) % PALETTE.length];
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 const MIN_BOX = 3;                       // smallest box side, in image pixels
@@ -243,6 +291,8 @@ const clampNum = (v, a, b, d) => { v = parseFloat(v); return isFinite(v) ? clamp
 const state = {
   imgs: [],                              // { name, blob, w, h, t, thumb, _el, _n }
   classes: ["bag", "board"],
+  throwIdx: 0,                           // 0..7 : P1B1, P2B1, P1B2, P2B2, ...
+  autoCarry: true,
   labels: new Map(),                     // name -> { boxes: [{c,x,y,w,h}], done }
   cur: -1, curClass: 0, sel: -1,
   tool: "draw", showLabels: true,
@@ -291,7 +341,7 @@ async function saveMeta() {
     const im = curImg();
     const tx = db.transaction("meta", "readwrite");
     tx.objectStore("meta").put({ classes: state.classes, labels, cur: im ? im.name : null, split: state.split,
-      showLabels: state.showLabels, curClass: state.curClass }, "project");
+      showLabels: state.showLabels, curClass: state.curClass, throwIdx: state.throwIdx, autoCarry: state.autoCarry }, "project");
     await txDone(tx);
     setSaveState(imgSaveFailed ? "Labels saved (images too big to keep)" : "Saved");
   } catch (e) { setSaveState("Save failed"); console.error(e); }
@@ -514,7 +564,32 @@ function redo() { const im = curImg(); if (!im) return; const h = H(im.name); if
 function changed() { refreshFi(curImg()); updateAll(); scheduleSave(); requestDraw(); }
 function mutate(fn) { if (!curImg()) return; pushUndoRaw(rawL()); fn(curL()); changed(); }
 
-function addBox(b) { mutate(L => { L.boxes.push(b); L.done = false; state.sel = L.boxes.length - 1; }); }
+function carrySource() {
+  const im = curImg(), g = grpName(im.name);
+  for (let k = state.cur - 1; k >= 0 && k >= state.cur - 30; k--) {
+    const m = state.imgs[k]; if (grpName(m.name) !== g) break;
+    const L = state.labels.get(m.name);
+    if (L && L.boxes.length) return L.boxes.filter(x => !isBag(x) || x.st === 1);
+  }
+  return [];
+}
+function cloneBox(b, W, Hh) {
+  const x = clamp(b.x, 0, W - MIN_BOX), y = clamp(b.y, 0, Hh - MIN_BOX);
+  const nb = { c: b.c, x, y, w: Math.min(b.w, W - x), h: Math.min(b.h, Hh - y) };
+  if (b.p) { nb.p = b.p; nb.n = b.n; }
+  if (b.st) nb.st = b.st;
+  return nb;
+}
+function addBox(b) {
+  const L0 = curL();
+  let carried = [];
+  if (state.autoCarry && !L0.boxes.length && !L0.done) {
+    carried = carrySource().map(x => cloneBox(x, bmp.width, bmp.height))
+      .filter(x => !(isBag(b) && b.p && x.p === b.p && x.n === b.n) && iou(x, b) < 0.9);
+  }
+  mutate(L => { L.boxes.push(...carried, b); L.done = false; state.sel = L.boxes.length - 1; });
+  if (carried.length) toast("Carried " + carried.length + " resting bag/board box" + (carried.length === 1 ? "" : "es") + " from the last frame.");
+}
 function deleteSel() { if (state.sel < 0) return; mutate(L => { L.boxes.splice(state.sel, 1); state.sel = -1; }); }
 function setClass(i) {
   state.curClass = i;
@@ -532,9 +607,7 @@ function copyPrev() {
   if (!src || !src.boxes.length) return toast("The previous image has no boxes.");
   const L = curL(), W = bmp.width, Hh = bmp.height, add = [];
   for (const b of src.boxes) {
-    const x = clamp(b.x, 0, W - MIN_BOX), y = clamp(b.y, 0, Hh - MIN_BOX);
-    const nb = { c: b.c, x, y, w: Math.min(b.w, W - x), h: Math.min(b.h, Hh - y) };
-    if (b.r) nb.r = 1;
+    const nb = cloneBox(b, W, Hh);
     if (!L.boxes.some(o => o.c === nb.c && iou(o, nb) > 0.9)) add.push(nb);
   }
   if (!add.length) return toast("Those boxes are already here.");
@@ -564,13 +637,50 @@ function nudge(dx, dy) {
   changed();
 }
 
-const REST_COLOR = "#ff2d2d";
-function toggleRest() {
+function toggleState(v) {
   const L = curL(), b = L && L.boxes[state.sel];
-  if (!b) return toast("Click a box first, then press R to flag it as resting.");
-  mutate(L2 => { const x = L2.boxes[state.sel]; if (x.r) delete x.r; else x.r = 1; });
+  if (!b) return toast("Click a bag's box first.");
+  if (!isBag(b)) return toast("Resting, moved and in-hole are for bags, not boards.");
+  mutate(L2 => { const x = L2.boxes[state.sel]; if (x.st === v) delete x.st; else x.st = v; });
 }
-$("restBtn").onclick = toggleRest;
+$("stRest").onclick = () => toggleState(1);
+$("stMoved").onclick = () => toggleState(2);
+$("stHole").onclick = () => toggleState(3);
+
+/* which bag is being drawn: Player 1/2 and bag number 1-4 */
+const bagNow = () => ({ p: state.throwIdx % 2 + 1, n: Math.floor(state.throwIdx / 2) + 1 });
+function setThrow(i) { state.throwIdx = clamp(i, 0, 7); updateAll(); scheduleSave(); }
+const throwIndex = (p, n) => (n - 1) * 2 + (p - 1);
+$("bagNext").onclick = () => setThrow(state.throwIdx + 1);
+$("bagPrev").onclick = () => setThrow(state.throwIdx - 1);
+$("pl1").onclick = () => setThrow(throwIndex(1, bagNow().n));
+$("pl2").onclick = () => setThrow(throwIndex(2, bagNow().n));
+[1, 2, 3, 4].forEach(n => { $("bn" + n).onclick = () => setThrow(throwIndex(bagNow().p, n)); });
+function applyBag() {
+  const b = curL().boxes[state.sel];
+  if (!b || !isBag(b)) return toast("Click a bag's box first.");
+  const { p, n } = bagNow();
+  mutate(L => { const x = L.boxes[state.sel]; x.p = p; x.n = n; });
+}
+$("applyBag").onclick = applyBag;
+$("verTxt").textContent = "Version " + APP_VERSION;
+$("reloadBtn").onclick = async () => {
+  try { const regs = await navigator.serviceWorker.getRegistrations(); await Promise.all(regs.map(r => r.unregister())); } catch (e) { /* ignore */ }
+  try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); } catch (e) { /* ignore */ }
+  location.href = location.pathname + "?v=" + Date.now();
+};
+$("autoCarry").onchange = e => { state.autoCarry = e.target.checked; scheduleSave(); };
+
+function bagStats() {
+  const im = curImg(); if (!im) return null;
+  const g = grpName(im.name), seen = new Set(), hole = new Set();
+  for (let k = 0; k <= state.cur; k++) {
+    const m = state.imgs[k]; if (grpName(m.name) !== g) continue;
+    const L = state.labels.get(m.name); if (!L) continue;
+    for (const b of L.boxes) if (isBag(b) && b.p && b.n) { const id = b.p + "-" + b.n; seen.add(id); if (b.st === 3) hole.add(id); }
+  }
+  return { thrown: seen.size, hole: hole.size, board: seen.size - hole.size };
+}
 
 /* ====================== side panels ====================== */
 function renderClasses() {
@@ -610,10 +720,10 @@ function renderBoxes() {
   }
   L.boxes.forEach((b, i) => {
     const row = document.createElement("div"); row.className = "bx" + (i === state.sel ? " on" : "");
-    const sw = document.createElement("span"); sw.className = "sw"; sw.style.background = colorOf(b.c);
+    const sw = document.createElement("span"); sw.className = "sw"; sw.style.background = boxColor(b);
     const nm = document.createElement("span"); nm.className = "nm";
-    nm.textContent = (state.classes[b.c] || "?") + (b.r ? " · resting" : "") + "  " + Math.round(b.w) + "×" + Math.round(b.h);
-    if (b.r) nm.style.color = REST_COLOR;
+    nm.textContent = boxTag(b) + "  " + Math.round(b.w) + "×" + Math.round(b.h);
+    if (isBag(b) && b.st) { nm.style.color = boxColor(b); row.style.borderColor = boxColor(b); row.style.borderWidth = "2px"; }
     const del = document.createElement("button"); del.className = "mini"; del.textContent = "✕"; del.setAttribute("aria-label", "Delete box");
     del.onclick = ev => { ev.stopPropagation(); state.sel = i; deleteSel(); };
     row.append(sw, nm, del); row.onclick = () => { state.sel = i; updateAll(); requestDraw(); }; box.append(row);
@@ -635,9 +745,18 @@ function updateAll() {
   const h = im ? H(im.name) : { u: [], r: [] };
   $("undoBtn").disabled = !h.u.length; $("redoBtn").disabled = !h.r.length;
   $("delBtn").disabled = state.sel < 0; $("nextUnBtn").disabled = !has;
-  const sbx = L.boxes[state.sel];
-  $("restBtn").disabled = !sbx; $("restBtn").classList.toggle("on", !!(sbx && sbx.r));
-  $("restBtn").textContent = sbx && sbx.r ? "Resting (press R to clear)" : "Mark resting (R)";
+  const sbx = L.boxes[state.sel], bagSel = !!(sbx && isBag(sbx));
+  [["stRest", 1], ["stMoved", 2], ["stHole", 3]].forEach(([id, v]) => { $(id).disabled = !bagSel; $(id).classList.toggle("on", bagSel && sbx.st === v); });
+  const t = bagNow();
+  $("throwNow").textContent = "Player " + t.p + " · Bag " + t.n;
+  $("throwNow").style.borderColor = P_COL[t.p]; $("throwNow").style.color = P_COL[t.p];
+  $("pl1").classList.toggle("on", t.p === 1); $("pl2").classList.toggle("on", t.p === 2);
+  [1, 2, 3, 4].forEach(n => $("bn" + n).classList.toggle("on", t.n === n));
+  $("bagPrev").disabled = state.throwIdx <= 0; $("bagNext").disabled = state.throwIdx >= 7;
+  $("applyBag").disabled = !bagSel;
+  $("autoCarry").checked = state.autoCarry;
+  const bs = bagStats();
+  $("bagCount").textContent = bs && bs.thrown ? "Bags so far in this video: " + bs.thrown + " of 8 thrown · " + bs.hole + " in the hole · " + bs.board + " on the board" : "Bag count appears once boxes have a player and bag number.";
 }
 function setButtons() {
   ["openBtn", "loadLabelsBtn", "saveLabelsBtn", "exportBtn", "clearBtn"].forEach(id => { $(id).disabled = busy; });
@@ -734,11 +853,14 @@ function draw() {
   ctx.drawImage(bmp, 0, 0);
   const bs = curL().boxes;
   for (let i = 0; i < bs.length; i++) {
-    const b = bs[i], col = b.r ? REST_COLOR : colorOf(b.c);
-    if (b.r) { ctx.fillStyle = "rgba(255,45,45,.14)"; ctx.fillRect(b.x, b.y, b.w, b.h); }
+    const b = bs[i], col = boxColor(b);
+    if (isBag(b) && b.st === 1) { ctx.fillStyle = "rgba(255,45,45,.14)"; ctx.fillRect(b.x, b.y, b.w, b.h); }
     if (i === state.sel) { ctx.fillStyle = col + "33"; ctx.fillRect(b.x, b.y, b.w, b.h); }
     ctx.lineWidth = 4 / s; ctx.strokeStyle = "rgba(0,0,0,.65)"; ctx.strokeRect(b.x, b.y, b.w, b.h);
-    ctx.lineWidth = (i === state.sel || b.r ? 3 : 2) / s; ctx.strokeStyle = col; ctx.strokeRect(b.x, b.y, b.w, b.h);
+    ctx.lineWidth = (i === state.sel || (isBag(b) && b.st) ? 3 : 2) / s; ctx.strokeStyle = col;
+    if (isBag(b) && b.st === 3) ctx.setLineDash([8 / s, 5 / s]);
+    ctx.strokeRect(b.x, b.y, b.w, b.h); ctx.setLineDash([]);
+    if (isBag(b) && b.st === 3) { ctx.beginPath(); ctx.moveTo(b.x, b.y); ctx.lineTo(b.x + b.w, b.y + b.h); ctx.moveTo(b.x + b.w, b.y); ctx.lineTo(b.x, b.y + b.h); ctx.stroke(); }
   }
   const g = gesture;
   if (g && g.kind === "draw" && g.moved) {
@@ -749,10 +871,10 @@ function draw() {
   if (state.showLabels) {
     ctx.font = "600 12px system-ui, sans-serif"; ctx.textBaseline = "middle";
     for (const b of bs) {
-      const t = (state.classes[b.c] || "?") + (b.r ? " · resting" : ""), w = ctx.measureText(t).width + 8;
+      const t = boxTag(b), w = ctx.measureText(t).width + 8;
       const x = ox + b.x * s, y = oy + b.y * s, ty = y - 8 < 0 ? y + 9 : y - 9;
-      ctx.fillStyle = b.r ? REST_COLOR : colorOf(b.c); ctx.fillRect(x, ty - 8, w, 16);
-      ctx.fillStyle = b.r ? "#fff" : "#111"; ctx.fillText(t, x + 4, ty);
+      ctx.fillStyle = boxColor(b); ctx.fillRect(x, ty - 8, w, 16);
+      ctx.fillStyle = isBag(b) && b.st === 1 ? "#fff" : "#111"; ctx.fillText(t, x + 4, ty);
     }
   }
   const sb = bs[state.sel];
@@ -760,7 +882,7 @@ function draw() {
     const pts = handlePts(sb);
     for (const h of HANDLES) {
       const sx = ox + pts[h][0] * s, sy = oy + pts[h][1] * s;
-      ctx.fillStyle = "#fff"; ctx.strokeStyle = colorOf(sb.c); ctx.lineWidth = 2;
+      ctx.fillStyle = "#fff"; ctx.strokeStyle = boxColor(sb); ctx.lineWidth = 2;
       ctx.fillRect(sx - 5, sy - 5, 10, 10); ctx.strokeRect(sx - 5, sy - 5, 10, 10);
     }
   }
@@ -859,7 +981,11 @@ function endPointer(e) {
   gesture = null; updateCursor();
   if (g.kind === "draw") {
     const bx = Math.min(g.x0, g.x1), by = Math.min(g.y0, g.y1), bw = Math.abs(g.x1 - g.x0), bh = Math.abs(g.y1 - g.y0);
-    if (g.moved && bw >= MIN_BOX && bh >= MIN_BOX) addBox({ c: state.curClass, x: bx, y: by, w: bw, h: bh });
+    if (g.moved && bw >= MIN_BOX && bh >= MIN_BOX) {
+      const nb = { c: state.curClass, x: bx, y: by, w: bw, h: bh };
+      if (state.curClass === 0) { const t = bagNow(); nb.p = t.p; nb.n = t.n; }
+      addBox(nb);
+    }
     else { state.sel = boxAt(g.ix, g.iy); updateAll(); requestDraw(); }
   } else if (g.kind === "move" || g.kind === "resize") {
     const b = curL().boxes[state.sel];
@@ -867,7 +993,7 @@ function endPointer(e) {
       if (b.w < MIN_BOX) b.w = MIN_BOX; if (b.h < MIN_BOX) b.h = MIN_BOX;
       b.x = clamp(b.x, 0, bmp.width - b.w); b.y = clamp(b.y, 0, bmp.height - b.h);
       // dragging a resting bag's box well away means the bag moved, so it is no longer resting
-      if (g.kind === "move" && b.r && Math.hypot(b.x - g.start.x, b.y - g.start.y) > 0.5 * Math.min(b.w, b.h)) { delete b.r; toast("Box moved, so it is no longer resting."); }
+      if (g.kind === "move" && isBag(b) && b.st === 1 && Math.hypot(b.x - g.start.x, b.y - g.start.y) > 0.5 * Math.min(b.w, b.h)) { b.st = 2; toast("Bag moved: now green. Press R when it stops again."); }
     }
     if (rawL() !== g.before) { pushUndoRaw(g.before); changed(); } else requestDraw();
   }
@@ -909,7 +1035,12 @@ window.addEventListener("keydown", e => {
     case "c": copyPrev(); break;
     case "e": markEmpty(); break;
     case "u": nextUnlabeled(); break;
-    case "r": toggleRest(); break;
+    case "r": toggleState(1); break;
+    case "m": toggleState(2); break;
+    case "x": toggleState(3); break;
+    case "n": setThrow(state.throwIdx + (e.shiftKey ? -1 : 1)); break;
+    case "p": setThrow(throwIndex(bagNow().p === 1 ? 2 : 1, bagNow().n)); break;
+    case "t": applyBag(); break;
     case "z": if (bmp) setHold(!holdView); break;
     case "l": state.showLabels = !state.showLabels; scheduleSave(); requestDraw(); break;
   }
@@ -923,7 +1054,7 @@ function saveLabelsFile() {
   state.labels.forEach((L, name) => {
     if (!L.boxes.length && !L.done) return;
     const im = state.imgs.find(i => i.name === name);
-    images[name] = { w: im ? im.w : null, h: im ? im.h : null, done: L.done, boxes: L.boxes.map(b => { const o = { c: b.c, x: +b.x.toFixed(2), y: +b.y.toFixed(2), w: +b.w.toFixed(2), h: +b.h.toFixed(2) }; if (b.r) o.r = 1; return o; }) };
+    images[name] = { w: im ? im.w : null, h: im ? im.h : null, done: L.done, boxes: L.boxes.map(b => { const o = { c: b.c, x: +b.x.toFixed(2), y: +b.y.toFixed(2), w: +b.w.toFixed(2), h: +b.h.toFixed(2) }; if (b.p) { o.p = b.p; o.n = b.n; } if (b.st) o.st = b.st; return o; }) };
   });
   if (!Object.keys(images).length) return toast("No labels to save yet.");
   const d = new Date(), p2 = n => String(n).padStart(2, "0");
@@ -940,7 +1071,7 @@ async function importLabels(file) {
   let n = 0, pending = 0;
   for (const [name, v] of Object.entries(o.images)) {
     const boxes = (v.boxes || []).filter(b => map[b.c] !== undefined && [b.x, b.y, b.w, b.h].every(Number.isFinite) && b.w > 0 && b.h > 0)
-      .map(b => { const o = { c: map[b.c], x: +b.x, y: +b.y, w: +b.w, h: +b.h }; if (b.r) o.r = 1; return o; });
+      .map(b => { const o = { c: map[b.c], x: +b.x, y: +b.y, w: +b.w, h: +b.h }; if (b.p >= 1 && b.p <= 2 && b.n >= 1 && b.n <= 4) { o.p = +b.p; o.n = +b.n; } const st = b.st || (b.r ? 1 : 0); if (st >= 1 && st <= 3) o.st = st; return o; });
     state.labels.set(name, { boxes, done: !!v.done && !boxes.length });
     n++; if (!have.has(name)) pending++;
   }
@@ -1060,7 +1191,9 @@ async function init() {
       const [meta, recs] = await Promise.all([r1, r2]);
       if (meta) {
         if (Array.isArray(meta.classes) && meta.classes.length) state.classes = meta.classes.map(String);
-        for (const [n, L] of Object.entries(meta.labels || {})) state.labels.set(n, { boxes: L.boxes || [], done: !!L.done });
+        for (const [n, L] of Object.entries(meta.labels || {})) state.labels.set(n, { boxes: (L.boxes || []).map(b => { if (b.r && !b.st) { b.st = 1; } delete b.r; return b; }), done: !!L.done });
+        if (Number.isInteger(meta.throwIdx) && meta.throwIdx >= 0 && meta.throwIdx <= 7) state.throwIdx = meta.throwIdx;
+        if (typeof meta.autoCarry === "boolean") state.autoCarry = meta.autoCarry;
         if (meta.split) state.split = Object.assign(state.split, meta.split);
         if (typeof meta.showLabels === "boolean") state.showLabels = meta.showLabels;
         if (Number.isInteger(meta.curClass) && meta.curClass < state.classes.length) state.curClass = meta.curClass;

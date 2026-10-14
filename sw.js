@@ -1,5 +1,5 @@
 // Caches the app shell so the labeler opens offline after the first visit.
-const CACHE = "bt-labeler-v3";
+const CACHE = "bt-labeler-v4";
 const SHELL = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", e => {
@@ -15,7 +15,7 @@ self.addEventListener("fetch", e => {
   if (e.request.method !== "GET") return;
   // network first so updates show up, cache as the offline fallback
   e.respondWith(
-    fetch(e.request).then(res => {
+    fetch(e.request, { cache: "no-cache" }).then(res => {
       const copy = res.clone();
       caches.open(CACHE).then(c => c.put(e.request, copy)).catch(() => {});
       return res;
