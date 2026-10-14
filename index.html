@@ -261,20 +261,22 @@
 /* ====================== constants and state ====================== */
 const $ = id => document.getElementById(id);
 const PALETTE = ["#f5a524", "#c792ea", "#5aa9ff", "#ff6b6b", "#3ecf8e", "#ffd866", "#4dd0e1", "#ff8a65", "#a5d6a7"];
-const APP_VERSION = "5";
-const P_COL = { 1: "#f5a524", 2: "#5aa9ff" };          // player colours
-const REST_COLOR = "#ff2d2d", SHIFT_COLOR = "#3ecf8e", HOLE_COLOR = "#e8eef5";
+const APP_VERSION = "6";
+// Player 1 = blue shades, Player 2 = orange shades; bag 1 darkest, bag 4 lightest.
+const BAG_SHADES = { 1: ["#1d4ed8", "#3b82f6", "#7cb8ff", "#c3dcff"], 2: ["#b84a00", "#f07a00", "#ffa940", "#ffd199"] };
+const UNTAGGED = "#c9d1d9";                              // a bag with no player/number yet
+const REST_COLOR = "#ff2d2d", SHIFT_COLOR = "#3ecf8e", HOLE_COLOR = "#ffffff";
 const isBag = b => b.c === 0;
-function boxColor(b) {
-  if (!isBag(b)) return colorOf(b.c);
-  if (b.st === 1) return REST_COLOR;
-  if (b.st === 2) return SHIFT_COLOR;
-  if (b.st === 3) return HOLE_COLOR;
-  return b.p ? P_COL[b.p] : colorOf(0);
+const shadeOf = (p, n) => (BAG_SHADES[p] && BAG_SHADES[p][n - 1]) || UNTAGGED;
+const stateColor = b => (isBag(b) ? (b.st === 1 ? REST_COLOR : b.st === 2 ? SHIFT_COLOR : b.st === 3 ? HOLE_COLOR : null) : null);
+function boxColor(b) { return isBag(b) ? (b.p ? shadeOf(b.p, b.n) : UNTAGGED) : colorOf(b.c); }
+function textOn(hex) {
+  const v = parseInt(hex.slice(1), 16), r = v >> 16, g = (v >> 8) & 255, bl = v & 255;
+  return (0.2126 * r + 0.7152 * g + 0.0722 * bl) / 255 > 0.55 ? "#111" : "#fff";
 }
 function boxTag(b) {
   let t = state.classes[b.c] || "?";
-  if (isBag(b) && b.p) t = "P" + b.p + " B" + b.n;
+  if (isBag(b) && b.p) t = "P" + b.p + "B" + b.n;
   if (isBag(b)) t += b.st === 1 ? " · resting" : b.st === 2 ? " · moved" : b.st === 3 ? " · in hole" : "";
   return t;
 }
@@ -745,7 +747,7 @@ function renderBoxes() {
     const sw = document.createElement("span"); sw.className = "sw"; sw.style.background = boxColor(b);
     const nm = document.createElement("span"); nm.className = "nm";
     nm.textContent = boxTag(b) + "  " + Math.round(b.w) + "×" + Math.round(b.h);
-    if (isBag(b) && b.st) { nm.style.color = boxColor(b); row.style.borderColor = boxColor(b); row.style.borderWidth = "2px"; }
+    if (stateColor(b)) { nm.style.color = stateColor(b); row.style.borderColor = stateColor(b); row.style.borderWidth = "2px"; }
     const del = document.createElement("button"); del.className = "mini"; del.textContent = "✕"; del.setAttribute("aria-label", "Delete box");
     del.onclick = ev => { ev.stopPropagation(); state.sel = i; deleteSel(); };
     row.append(sw, nm, del); row.onclick = () => { state.sel = i; updateAll(); requestDraw(); }; box.append(row);
@@ -771,7 +773,9 @@ function updateAll() {
   [["stRest", 1], ["stMoved", 2], ["stHole", 3]].forEach(([id, v]) => { $(id).disabled = !bagSel; $(id).classList.toggle("on", bagSel && sbx.st === v); });
   const t = bagNow();
   $("throwNow").textContent = "Player " + t.p + " · Bag " + t.n;
-  $("throwNow").style.borderColor = P_COL[t.p]; $("throwNow").style.color = P_COL[t.p];
+  const tc = shadeOf(t.p, t.n);
+  $("throwNow").style.borderColor = tc; $("throwNow").style.background = tc + "33"; $("throwNow").style.color = "#fff";
+  [1, 2, 3, 4].forEach(n => { $("bn" + n).style.borderBottom = "5px solid " + shadeOf(t.p, n); });
   $("pl1").classList.toggle("on", t.p === 1); $("pl2").classList.toggle("on", t.p === 2);
   [1, 2, 3, 4].forEach(n => $("bn" + n).classList.toggle("on", t.n === n));
   $("bagPrev").disabled = state.throwIdx <= 0; $("bagNext").disabled = state.throwIdx >= 7;
@@ -875,28 +879,33 @@ function draw() {
   ctx.drawImage(bmp, 0, 0);
   const bs = curL().boxes;
   for (let i = 0; i < bs.length; i++) {
-    const b = bs[i], col = boxColor(b);
+    const b = bs[i], col = boxColor(b), sc = stateColor(b);
     if (isBag(b) && b.st === 1) { ctx.fillStyle = "rgba(255,45,45,.14)"; ctx.fillRect(b.x, b.y, b.w, b.h); }
     if (i === state.sel) { ctx.fillStyle = col + "33"; ctx.fillRect(b.x, b.y, b.w, b.h); }
     ctx.lineWidth = 4 / s; ctx.strokeStyle = "rgba(0,0,0,.65)"; ctx.strokeRect(b.x, b.y, b.w, b.h);
-    ctx.lineWidth = (i === state.sel || (isBag(b) && b.st) ? 3 : 2) / s; ctx.strokeStyle = col;
+    ctx.lineWidth = (i === state.sel || sc ? 3 : 2) / s; ctx.strokeStyle = col;
     if (isBag(b) && b.st === 3) ctx.setLineDash([8 / s, 5 / s]);
     ctx.strokeRect(b.x, b.y, b.w, b.h); ctx.setLineDash([]);
-    if (isBag(b) && b.st === 3) { ctx.beginPath(); ctx.moveTo(b.x, b.y); ctx.lineTo(b.x + b.w, b.y + b.h); ctx.moveTo(b.x + b.w, b.y); ctx.lineTo(b.x, b.y + b.h); ctx.stroke(); }
+    if (sc && b.st !== 3) {            // resting (red) / moved (green): a second border inside, so the bag's own colour still shows
+      const ins = 4 / s;
+      if (b.w > ins * 3 && b.h > ins * 3) { ctx.lineWidth = 2.5 / s; ctx.strokeStyle = sc; ctx.strokeRect(b.x + ins, b.y + ins, b.w - ins * 2, b.h - ins * 2); }
+    }
+    if (isBag(b) && b.st === 3) { ctx.lineWidth = 2 / s; ctx.strokeStyle = HOLE_COLOR; ctx.beginPath(); ctx.moveTo(b.x, b.y); ctx.lineTo(b.x + b.w, b.y + b.h); ctx.moveTo(b.x + b.w, b.y); ctx.lineTo(b.x, b.y + b.h); ctx.stroke(); }
   }
   const g = gesture;
   if (g && g.kind === "draw" && g.moved) {
     const x = Math.min(g.x0, g.x1), y = Math.min(g.y0, g.y1), w = Math.abs(g.x1 - g.x0), h = Math.abs(g.y1 - g.y0);
-    ctx.setLineDash([6 / s, 4 / s]); ctx.lineWidth = 2 / s; ctx.strokeStyle = colorOf(state.curClass); ctx.strokeRect(x, y, w, h); ctx.setLineDash([]);
+    ctx.setLineDash([6 / s, 4 / s]); ctx.lineWidth = 2 / s; ctx.strokeStyle = state.curClass === 0 ? shadeOf(bagNow().p, bagNow().n) : colorOf(state.curClass); ctx.strokeRect(x, y, w, h); ctx.setLineDash([]);
   }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   if (state.showLabels) {
     ctx.font = "600 12px system-ui, sans-serif"; ctx.textBaseline = "middle";
     for (const b of bs) {
-      const t = boxTag(b), w = ctx.measureText(t).width + 8;
-      const x = ox + b.x * s, y = oy + b.y * s, ty = y - 8 < 0 ? y + 9 : y - 9;
-      ctx.fillStyle = boxColor(b); ctx.fillRect(x, ty - 8, w, 16);
-      ctx.fillStyle = isBag(b) && b.st === 1 ? "#fff" : "#111"; ctx.fillText(t, x + 4, ty);
+      const t = boxTag(b), sc = stateColor(b), blk = sc ? 7 : 0, w = ctx.measureText(t).width + 8 + blk;
+      const x = ox + b.x * s, y = oy + b.y * s, ty = y - 8 < 0 ? y + 9 : y - 9, col = boxColor(b);
+      ctx.fillStyle = col; ctx.fillRect(x, ty - 8, w, 16);
+      if (sc) { ctx.fillStyle = sc; ctx.fillRect(x, ty - 8, blk, 16); }
+      ctx.fillStyle = textOn(col); ctx.fillText(t, x + 4 + blk, ty);
     }
   }
   const sb = bs[state.sel];
