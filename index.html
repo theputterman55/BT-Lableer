@@ -51,6 +51,7 @@
   #stage { position: absolute; inset: 0; display: block; touch-action: none; }
   .hud { position: absolute; right: 8px; top: 8px; display: flex; gap: 6px; }
   .hud button { background: rgba(16,26,36,.85); min-width: 38px; padding: 4px 10px; }
+  .hud button.on { background: var(--accent); color: #1a1200; outline: none; }
   #info { position: absolute; left: 8px; bottom: 8px; right: 8px; font-size: 12px; color: var(--muted); pointer-events: none;
     text-shadow: 0 1px 2px #000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -122,6 +123,7 @@
       <button id="zoomIn" type="button" aria-label="Zoom in">+</button>
       <button id="zoomFit" type="button">Fit</button>
       <button id="zoom1" type="button">1:1</button>
+      <button id="zoomHold" type="button" aria-pressed="false" title="Keep this zoom and position when you change images (Z)">Hold</button>
     </div>
     <div id="info"></div>
     <div id="empty">
@@ -210,6 +212,7 @@
     <tr><td>Wheel, + / &minus;, 0</td><td>Zoom, zoom, fit to window</td></tr>
     <tr><td>Space + drag</td><td>Pan (also right-drag, or two fingers on a touch screen)</td></tr>
     <tr><td>Pinch</td><td>Zoom on a touch screen</td></tr>
+    <tr><td>Z</td><td>Hold view: keep zoom and position on the next image</td></tr>
     <tr><td>L</td><td>Show or hide box labels</td></tr>
     <tr><td>Esc</td><td>Deselect</td></tr>
   </table>
@@ -486,7 +489,9 @@ async function goTo(i) {
   try { b = await getBmp(im); } catch (e) { toast("Could not open " + im.name, "bad"); bmpCache.delete(im.name); return; }
   if (tok !== loadTok) return;
   state.cur = i; state.sel = -1; gesture = null; ptrs.clear();
-  bmp = b; fitView();
+  const keep0 = holdView && bmp ? captureView() : null;
+  bmp = b;
+  if (keep0) restoreView(keep0); else fitView();
   refreshFi(old); refreshFi(im);
   im._el && im._el.scrollIntoView({ block: "nearest", inline: "nearest" });
   const keep = new Set([im.name]);
@@ -652,7 +657,26 @@ function zoomAt(px, py, f) {
 }
 $("zoomIn").onclick = () => zoomAt(view.w / 2, view.h / 2, 1.5);
 $("zoomOut").onclick = () => zoomAt(view.w / 2, view.h / 2, 1 / 1.5);
-$("zoomFit").onclick = () => { fitView(); requestDraw(); };
+/* Hold view: keep the same zoom and spot when the image changes. */
+let holdView = false;
+function captureView() {   // centre of the screen as a fraction of the picture, plus zoom relative to fit
+  return { cx: (view.w / 2 - view.ox) / view.s / bmp.width, cy: (view.h / 2 - view.oy) / view.s / bmp.height, rel: view.s / view.fitS };
+}
+function restoreView(v) {
+  computeFit();
+  view.s = clamp(v.rel * view.fitS, view.fitS * 0.4, 80);
+  view.ox = view.w / 2 - v.cx * bmp.width * view.s;
+  view.oy = view.h / 2 - v.cy * bmp.height * view.s;
+}
+function setHold(on) {
+  holdView = on;
+  $("zoomHold").classList.toggle("on", on);
+  $("zoomHold").setAttribute("aria-pressed", on ? "true" : "false");
+  if (!on) { fitView(); requestDraw(); }
+  toast(on ? "Hold view on: new images keep this zoom and position" : "Hold view off", "");
+}
+$("zoomHold").onclick = () => setHold(!holdView);
+$("zoomFit").onclick = () => { if (holdView) setHold(false); else { fitView(); requestDraw(); } };
 $("zoom1").onclick = () => { if (bmp) zoomAt(view.w / 2, view.h / 2, 1 / view.s); };
 new ResizeObserver(resizeStage).observe($("wrap"));
 window.addEventListener("resize", resizeStage);
@@ -855,7 +879,7 @@ window.addEventListener("keydown", e => {
     case "Escape": state.sel = -1; gesture = null; updateAll(); requestDraw(); return;
     case "+": case "=": zoomAt(view.w / 2, view.h / 2, 1.5); return;
     case "-": case "_": zoomAt(view.w / 2, view.h / 2, 1 / 1.5); return;
-    case "0": fitView(); requestDraw(); return;
+    case "0": if (holdView) setHold(false); else { fitView(); requestDraw(); } return;
     case "?": $("helpDlg").showModal(); return;
   }
   switch (low) {
@@ -867,6 +891,7 @@ window.addEventListener("keydown", e => {
     case "c": copyPrev(); break;
     case "e": markEmpty(); break;
     case "u": nextUnlabeled(); break;
+    case "z": if (bmp) setHold(!holdView); break;
     case "l": state.showLabels = !state.showLabels; scheduleSave(); requestDraw(); break;
   }
 });
