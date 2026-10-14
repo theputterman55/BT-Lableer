@@ -149,6 +149,7 @@
       <div class="grid2"><button id="prevBtn" type="button">&#9664; Prev</button><button id="nextBtn" type="button">Next &#9654;</button></div>
       <div class="grid2" style="margin-top:6px"><button id="copyBtn" type="button">Copy prev boxes</button><button id="emptyBtn" type="button">Mark empty</button></div>
       <div class="grid3" style="margin-top:6px"><button id="undoBtn" type="button">Undo</button><button id="redoBtn" type="button">Redo</button><button id="delBtn" type="button">Delete</button></div>
+      <button id="restBtn" type="button" style="margin-top:6px;width:100%" title="Flag the selected bag as resting (R)">Mark resting (R)</button>
       <button id="nextUnBtn" type="button" style="margin-top:6px;width:100%">Next unlabeled</button>
     </section>
     <section id="secClasses">
@@ -212,6 +213,7 @@
     <tr><td>Wheel, + / &minus;, 0</td><td>Zoom, zoom, fit to window</td></tr>
     <tr><td>Space + drag</td><td>Pan (also right-drag, or two fingers on a touch screen)</td></tr>
     <tr><td>Pinch</td><td>Zoom on a touch screen</td></tr>
+    <tr><td>R</td><td>Flag the selected bag as resting (red). Press again to clear</td></tr>
     <tr><td>Z</td><td>Hold view: keep zoom and position on the next image</td></tr>
     <tr><td>L</td><td>Show or hide box labels</td></tr>
     <tr><td>Esc</td><td>Deselect</td></tr>
@@ -532,6 +534,7 @@ function copyPrev() {
   for (const b of src.boxes) {
     const x = clamp(b.x, 0, W - MIN_BOX), y = clamp(b.y, 0, Hh - MIN_BOX);
     const nb = { c: b.c, x, y, w: Math.min(b.w, W - x), h: Math.min(b.h, Hh - y) };
+    if (b.r) nb.r = 1;
     if (!L.boxes.some(o => o.c === nb.c && iou(o, nb) > 0.9)) add.push(nb);
   }
   if (!add.length) return toast("Those boxes are already here.");
@@ -560,6 +563,14 @@ function nudge(dx, dy) {
   b.x = clamp(b.x + dx, 0, bmp.width - b.w); b.y = clamp(b.y + dy, 0, bmp.height - b.h);
   changed();
 }
+
+const REST_COLOR = "#ff2d2d";
+function toggleRest() {
+  const L = curL(), b = L && L.boxes[state.sel];
+  if (!b) return toast("Click a box first, then press R to flag it as resting.");
+  mutate(L2 => { const x = L2.boxes[state.sel]; if (x.r) delete x.r; else x.r = 1; });
+}
+$("restBtn").onclick = toggleRest;
 
 /* ====================== side panels ====================== */
 function renderClasses() {
@@ -601,7 +612,8 @@ function renderBoxes() {
     const row = document.createElement("div"); row.className = "bx" + (i === state.sel ? " on" : "");
     const sw = document.createElement("span"); sw.className = "sw"; sw.style.background = colorOf(b.c);
     const nm = document.createElement("span"); nm.className = "nm";
-    nm.textContent = (state.classes[b.c] || "?") + "  " + Math.round(b.w) + "×" + Math.round(b.h);
+    nm.textContent = (state.classes[b.c] || "?") + (b.r ? " · resting" : "") + "  " + Math.round(b.w) + "×" + Math.round(b.h);
+    if (b.r) nm.style.color = REST_COLOR;
     const del = document.createElement("button"); del.className = "mini"; del.textContent = "✕"; del.setAttribute("aria-label", "Delete box");
     del.onclick = ev => { ev.stopPropagation(); state.sel = i; deleteSel(); };
     row.append(sw, nm, del); row.onclick = () => { state.sel = i; updateAll(); requestDraw(); }; box.append(row);
@@ -623,6 +635,9 @@ function updateAll() {
   const h = im ? H(im.name) : { u: [], r: [] };
   $("undoBtn").disabled = !h.u.length; $("redoBtn").disabled = !h.r.length;
   $("delBtn").disabled = state.sel < 0; $("nextUnBtn").disabled = !has;
+  const sbx = L.boxes[state.sel];
+  $("restBtn").disabled = !sbx; $("restBtn").classList.toggle("on", !!(sbx && sbx.r));
+  $("restBtn").textContent = sbx && sbx.r ? "Resting (press R to clear)" : "Mark resting (R)";
 }
 function setButtons() {
   ["openBtn", "loadLabelsBtn", "saveLabelsBtn", "exportBtn", "clearBtn"].forEach(id => { $(id).disabled = busy; });
@@ -719,10 +734,11 @@ function draw() {
   ctx.drawImage(bmp, 0, 0);
   const bs = curL().boxes;
   for (let i = 0; i < bs.length; i++) {
-    const b = bs[i], col = colorOf(b.c);
+    const b = bs[i], col = b.r ? REST_COLOR : colorOf(b.c);
+    if (b.r) { ctx.fillStyle = "rgba(255,45,45,.14)"; ctx.fillRect(b.x, b.y, b.w, b.h); }
     if (i === state.sel) { ctx.fillStyle = col + "33"; ctx.fillRect(b.x, b.y, b.w, b.h); }
     ctx.lineWidth = 4 / s; ctx.strokeStyle = "rgba(0,0,0,.65)"; ctx.strokeRect(b.x, b.y, b.w, b.h);
-    ctx.lineWidth = (i === state.sel ? 3 : 2) / s; ctx.strokeStyle = col; ctx.strokeRect(b.x, b.y, b.w, b.h);
+    ctx.lineWidth = (i === state.sel || b.r ? 3 : 2) / s; ctx.strokeStyle = col; ctx.strokeRect(b.x, b.y, b.w, b.h);
   }
   const g = gesture;
   if (g && g.kind === "draw" && g.moved) {
@@ -733,10 +749,10 @@ function draw() {
   if (state.showLabels) {
     ctx.font = "600 12px system-ui, sans-serif"; ctx.textBaseline = "middle";
     for (const b of bs) {
-      const t = state.classes[b.c] || "?", w = ctx.measureText(t).width + 8;
+      const t = (state.classes[b.c] || "?") + (b.r ? " · resting" : ""), w = ctx.measureText(t).width + 8;
       const x = ox + b.x * s, y = oy + b.y * s, ty = y - 8 < 0 ? y + 9 : y - 9;
-      ctx.fillStyle = colorOf(b.c); ctx.fillRect(x, ty - 8, w, 16);
-      ctx.fillStyle = "#111"; ctx.fillText(t, x + 4, ty);
+      ctx.fillStyle = b.r ? REST_COLOR : colorOf(b.c); ctx.fillRect(x, ty - 8, w, 16);
+      ctx.fillStyle = b.r ? "#fff" : "#111"; ctx.fillText(t, x + 4, ty);
     }
   }
   const sb = bs[state.sel];
@@ -850,6 +866,8 @@ function endPointer(e) {
     if (b) {
       if (b.w < MIN_BOX) b.w = MIN_BOX; if (b.h < MIN_BOX) b.h = MIN_BOX;
       b.x = clamp(b.x, 0, bmp.width - b.w); b.y = clamp(b.y, 0, bmp.height - b.h);
+      // dragging a resting bag's box well away means the bag moved, so it is no longer resting
+      if (g.kind === "move" && b.r && Math.hypot(b.x - g.start.x, b.y - g.start.y) > 0.5 * Math.min(b.w, b.h)) { delete b.r; toast("Box moved, so it is no longer resting."); }
     }
     if (rawL() !== g.before) { pushUndoRaw(g.before); changed(); } else requestDraw();
   }
@@ -891,6 +909,7 @@ window.addEventListener("keydown", e => {
     case "c": copyPrev(); break;
     case "e": markEmpty(); break;
     case "u": nextUnlabeled(); break;
+    case "r": toggleRest(); break;
     case "z": if (bmp) setHold(!holdView); break;
     case "l": state.showLabels = !state.showLabels; scheduleSave(); requestDraw(); break;
   }
@@ -904,7 +923,7 @@ function saveLabelsFile() {
   state.labels.forEach((L, name) => {
     if (!L.boxes.length && !L.done) return;
     const im = state.imgs.find(i => i.name === name);
-    images[name] = { w: im ? im.w : null, h: im ? im.h : null, done: L.done, boxes: L.boxes.map(b => ({ c: b.c, x: +b.x.toFixed(2), y: +b.y.toFixed(2), w: +b.w.toFixed(2), h: +b.h.toFixed(2) })) };
+    images[name] = { w: im ? im.w : null, h: im ? im.h : null, done: L.done, boxes: L.boxes.map(b => { const o = { c: b.c, x: +b.x.toFixed(2), y: +b.y.toFixed(2), w: +b.w.toFixed(2), h: +b.h.toFixed(2) }; if (b.r) o.r = 1; return o; }) };
   });
   if (!Object.keys(images).length) return toast("No labels to save yet.");
   const d = new Date(), p2 = n => String(n).padStart(2, "0");
@@ -921,7 +940,7 @@ async function importLabels(file) {
   let n = 0, pending = 0;
   for (const [name, v] of Object.entries(o.images)) {
     const boxes = (v.boxes || []).filter(b => map[b.c] !== undefined && [b.x, b.y, b.w, b.h].every(Number.isFinite) && b.w > 0 && b.h > 0)
-      .map(b => ({ c: map[b.c], x: +b.x, y: +b.y, w: +b.w, h: +b.h }));
+      .map(b => { const o = { c: map[b.c], x: +b.x, y: +b.y, w: +b.w, h: +b.h }; if (b.r) o.r = 1; return o; });
     state.labels.set(name, { boxes, done: !!v.done && !boxes.length });
     n++; if (!have.has(name)) pending++;
   }
