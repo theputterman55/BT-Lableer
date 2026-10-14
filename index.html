@@ -161,6 +161,7 @@
       <div class="grid4" style="margin-top:6px"><button id="bn1" type="button">Bag 1</button><button id="bn2" type="button">Bag 2</button><button id="bn3" type="button">Bag 3</button><button id="bn4" type="button">Bag 4</button></div>
       <button id="applyBag" type="button" style="margin-top:6px;width:100%" title="Give the selected box this player and bag number (T)">Set selected box to this bag (T)</button>
       <label class="chk"><input type="checkbox" id="autoCarry" checked> Auto-carry resting bags and boards</label>
+      <label class="chk"><input type="checkbox" id="advOnRest" checked> After R or X, move to the next bag</label>
       <div id="bagCount" class="muted" style="margin-top:6px"></div>
     </section>
     <section id="secImage">
@@ -260,7 +261,7 @@
 /* ====================== constants and state ====================== */
 const $ = id => document.getElementById(id);
 const PALETTE = ["#f5a524", "#c792ea", "#5aa9ff", "#ff6b6b", "#3ecf8e", "#ffd866", "#4dd0e1", "#ff8a65", "#a5d6a7"];
-const APP_VERSION = "4";
+const APP_VERSION = "5";
 const P_COL = { 1: "#f5a524", 2: "#5aa9ff" };          // player colours
 const REST_COLOR = "#ff2d2d", SHIFT_COLOR = "#3ecf8e", HOLE_COLOR = "#e8eef5";
 const isBag = b => b.c === 0;
@@ -293,6 +294,7 @@ const state = {
   classes: ["bag", "board"],
   throwIdx: 0,                           // 0..7 : P1B1, P2B1, P1B2, P2B2, ...
   autoCarry: true,
+  advOnRest: true,                       // after R or X on the bag being drawn, move to the next bag
   labels: new Map(),                     // name -> { boxes: [{c,x,y,w,h}], done }
   cur: -1, curClass: 0, sel: -1,
   tool: "draw", showLabels: true,
@@ -341,7 +343,7 @@ async function saveMeta() {
     const im = curImg();
     const tx = db.transaction("meta", "readwrite");
     tx.objectStore("meta").put({ classes: state.classes, labels, cur: im ? im.name : null, split: state.split,
-      showLabels: state.showLabels, curClass: state.curClass, throwIdx: state.throwIdx, autoCarry: state.autoCarry }, "project");
+      showLabels: state.showLabels, curClass: state.curClass, throwIdx: state.throwIdx, autoCarry: state.autoCarry, advOnRest: state.advOnRest }, "project");
     await txDone(tx);
     setSaveState(imgSaveFailed ? "Labels saved (images too big to keep)" : "Saved");
   } catch (e) { setSaveState("Save failed"); console.error(e); }
@@ -540,6 +542,7 @@ async function goTo(i) {
   let b;
   try { b = await getBmp(im); } catch (e) { toast("Could not open " + im.name, "bad"); bmpCache.delete(im.name); return; }
   if (tok !== loadTok) return;
+  const oldIdx = state.cur;
   state.cur = i; state.sel = -1; gesture = null; ptrs.clear();
   const keep0 = holdView && bmp ? captureView() : null;
   bmp = b;
@@ -551,6 +554,17 @@ async function goTo(i) {
   trimCache(keep);
   if (state.imgs[i + 1]) getBmp(state.imgs[i + 1]).catch(() => {});
   updateAll(); requestDraw(); scheduleSave();
+  if (state.autoCarry && i === oldIdx + 1) arriveCarry();
+}
+/* Stepping forward one frame onto an untouched frame: bring over the resting bags (and the boards) so they stay red. */
+function arriveCarry() {
+  const L = curL();
+  if (!L || L.boxes.length || L.done) return;
+  const src = carrySource();
+  if (!src.some(x => isBag(x) && x.st === 1)) return;
+  const carried = src.map(x => cloneBox(x, bmp.width, bmp.height));
+  mutate(L2 => { L2.boxes.push(...carried); });
+  toast("Kept " + carried.filter(x => isBag(x)).length + " resting bag" + (carried.filter(x => isBag(x)).length === 1 ? "" : "s") + " from the last frame.");
 }
 
 /* ====================== undo and edits ====================== */
@@ -642,6 +656,13 @@ function toggleState(v) {
   if (!b) return toast("Click a bag's box first.");
   if (!isBag(b)) return toast("Resting, moved and in-hole are for bags, not boards.");
   mutate(L2 => { const x = L2.boxes[state.sel]; if (x.st === v) delete x.st; else x.st = v; });
+  // the bag being drawn has stopped or gone in the hole: its sequence is done, so line up the next bag
+  const b2 = curL().boxes[state.sel], t = bagNow();
+  if (state.advOnRest && b2 && (b2.st === 1 || b2.st === 3) && b2.p === t.p && b2.n === t.n && state.throwIdx < 7) {
+    setThrow(state.throwIdx + 1);
+    const nx = bagNow();
+    toast("P" + t.p + " B" + t.n + (b2.st === 1 ? " is resting" : " is in the hole") + ". Now drawing Player " + nx.p + " · Bag " + nx.n + ".");
+  }
 }
 $("stRest").onclick = () => toggleState(1);
 $("stMoved").onclick = () => toggleState(2);
@@ -670,6 +691,7 @@ $("reloadBtn").onclick = async () => {
   location.href = location.pathname + "?v=" + Date.now();
 };
 $("autoCarry").onchange = e => { state.autoCarry = e.target.checked; scheduleSave(); };
+$("advOnRest").onchange = e => { state.advOnRest = e.target.checked; scheduleSave(); };
 
 function bagStats() {
   const im = curImg(); if (!im) return null;
@@ -754,7 +776,7 @@ function updateAll() {
   [1, 2, 3, 4].forEach(n => $("bn" + n).classList.toggle("on", t.n === n));
   $("bagPrev").disabled = state.throwIdx <= 0; $("bagNext").disabled = state.throwIdx >= 7;
   $("applyBag").disabled = !bagSel;
-  $("autoCarry").checked = state.autoCarry;
+  $("autoCarry").checked = state.autoCarry; $("advOnRest").checked = state.advOnRest;
   const bs = bagStats();
   $("bagCount").textContent = bs && bs.thrown ? "Bags so far in this video: " + bs.thrown + " of 8 thrown · " + bs.hole + " in the hole · " + bs.board + " on the board" : "Bag count appears once boxes have a player and bag number.";
 }
@@ -1194,6 +1216,7 @@ async function init() {
         for (const [n, L] of Object.entries(meta.labels || {})) state.labels.set(n, { boxes: (L.boxes || []).map(b => { if (b.r && !b.st) { b.st = 1; } delete b.r; return b; }), done: !!L.done });
         if (Number.isInteger(meta.throwIdx) && meta.throwIdx >= 0 && meta.throwIdx <= 7) state.throwIdx = meta.throwIdx;
         if (typeof meta.autoCarry === "boolean") state.autoCarry = meta.autoCarry;
+        if (typeof meta.advOnRest === "boolean") state.advOnRest = meta.advOnRest;
         if (meta.split) state.split = Object.assign(state.split, meta.split);
         if (typeof meta.showLabels === "boolean") state.showLabels = meta.showLabels;
         if (Number.isInteger(meta.curClass) && meta.curClass < state.classes.length) state.curClass = meta.curClass;
