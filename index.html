@@ -265,7 +265,7 @@
 /* ====================== constants and state ====================== */
 const $ = id => document.getElementById(id);
 const PALETTE = ["#f5a524", "#c792ea", "#5aa9ff", "#ff6b6b", "#3ecf8e", "#ffd866", "#4dd0e1", "#ff8a65", "#a5d6a7"];
-const APP_VERSION = "6.1.2";
+const APP_VERSION = "6.1.3";
 // Player 1 = blue shades, Player 2 = orange shades; bag 1 darkest, bag 4 lightest.
 const BAG_SHADES = { 1: ["#1d4ed8", "#3b82f6", "#7cb8ff", "#c3dcff"], 2: ["#b84a00", "#f07a00", "#ffa940", "#ffd199"] };
 const UNTAGGED = "#c9d1d9";                              // a bag with no player/number yet
@@ -552,22 +552,33 @@ function startEdit(i) {
   updateAll(); updateCursor(); requestDraw();
   toast("Editing. Drag the box to move it, drag a handle to resize, then press Save (or Enter). Esc cancels.");
 }
-/* After a save: the bag's OLD spot is removed from the following frames of this video and the new spot takes over.
-   A later frame is changed only if it holds this bag (same player and number) still resting at the old spot;
-   the first frame where the bag has already moved on (or went in the hole) stops the sweep. */
+/* After a save: the bag's resting spot is updated on the following frames of this video, so the old spot disappears.
+   It follows the run of resting copies of this bag (same player and number) that start right after this frame and
+   sit in the same place as each other, wherever that place was. The run ends at the first frame where the bag was
+   moved (green), went in the hole, or was given a different resting spot of its own, so later work is never overwritten. */
 function sweepOldSpot(old, nu) {
   const im = curImg(), g = grpName(im.name), tagged = !!old.p;
-  let n = 0;
+  const same = x => isBag(x) && (x.p || 0) === (old.p || 0) && (x.n || 0) === (old.n || 0);
+  let n = 0, anchor = null;
   for (let k = state.cur + 1; k < state.imgs.length; k++) {
     const m = state.imgs[k]; if (grpName(m.name) !== g) break;
     const L = state.labels.get(m.name); if (!L || !L.boxes.length) continue;
-    const same = x => x.c === old.c && (x.p || 0) === (old.p || 0) && (x.n || 0) === (old.n || 0);
-    const hit = L.boxes.findIndex(x => same(x) && x.st === 1 && iou(x, old) > 0.5);
-    if (hit < 0) { if (tagged ? L.boxes.some(same) : true) break; else continue; }
+    let hit = -1;
+    if (tagged) {
+      hit = L.boxes.findIndex(x => same(x) && x.st === 1);
+      if (hit < 0) { if (L.boxes.some(same)) break; else continue; }
+    } else {
+      let best = 0.3; const ref = anchor || old;
+      L.boxes.forEach((x, j) => { if (same(x) && x.st === 1) { const v = iou(x, ref); if (v > best) { best = v; hit = j; } } });
+      if (hit < 0) break;
+    }
+    const cur = L.boxes[hit];
+    if (anchor && iou(cur, anchor) < 0.9) break;           // it has its own resting spot here: stop
+    if (!anchor) anchor = { x: cur.x, y: cur.y, w: cur.w, h: cur.h };
     const h = H(m.name); h.u.push(JSON.stringify({ boxes: L.boxes, done: L.done })); if (h.u.length > 80) h.u.shift(); h.r.length = 0;
     const dup = L.boxes.findIndex((x, j) => j !== hit && same(x) && iou(x, nu) > 0.5);
     if (dup >= 0) L.boxes.splice(hit, 1);
-    else { const x = L.boxes[hit]; x.x = nu.x; x.y = nu.y; x.w = nu.w; x.h = nu.h; x.st = 1; }
+    else { cur.x = nu.x; cur.y = nu.y; cur.w = nu.w; cur.h = nu.h; cur.st = 1; }
     refreshFi(m); n++;
   }
   return n;
