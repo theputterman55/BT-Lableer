@@ -273,7 +273,7 @@
 /* ====================== constants and state ====================== */
 const $ = id => document.getElementById(id);
 const PALETTE = ["#f5a524", "#c792ea", "#5aa9ff", "#ff6b6b", "#3ecf8e", "#ffd866", "#4dd0e1", "#ff8a65", "#a5d6a7"];
-const APP_VERSION = "7.5";
+const APP_VERSION = "7.6";
 // Player 1 = blue shades, Player 2 = orange shades; bag 1 darkest, bag 4 lightest.
 const BAG_SHADES = { 1: ["#1d4ed8", "#3b82f6", "#7cb8ff", "#c3dcff"], 2: ["#b84a00", "#f07a00", "#ffa940", "#ffd199"] };
 const UNTAGGED = "#c9d1d9";                              // a bag with no player/number yet
@@ -355,7 +355,7 @@ async function saveMeta() {
   if (!db) return;
   try {
     const labels = {};
-    state.labels.forEach((L, n) => { if (L.boxes.length || L.done) labels[n] = { boxes: L.boxes, done: L.done }; });
+    state.labels.forEach((L, n) => { if (L.boxes.length || L.done || L.had) labels[n] = { boxes: L.boxes, done: L.done, ...(L.had ? { had: true } : {}) }; });
     const im = curImg();
     const tx = db.transaction("meta", "readwrite");
     tx.objectStore("meta").put({ classes: state.classes, labels, cur: im ? im.name : null, split: state.split,
@@ -675,7 +675,7 @@ function applyRaw(raw) { const o = JSON.parse(raw), L = curL(); L.boxes = o.boxe
 function undo() { const im = curImg(); if (!im) return; const h = H(im.name); if (!h.u.length) return; h.r.push(rawL()); applyRaw(h.u.pop()); }
 function redo() { const im = curImg(); if (!im) return; const h = H(im.name); if (!h.r.length) return; h.u.push(rawL()); applyRaw(h.r.pop()); }
 function changed() { visitDirty = true; refreshFi(curImg()); updateAll(); scheduleSave(); requestDraw(); }
-function mutate(fn) { if (!curImg()) return; pushUndoRaw(rawL()); fn(curL()); changed(); }
+function mutate(fn) { if (!curImg()) return; pushUndoRaw(rawL()); const L0 = curL(); if (L0.boxes.length) L0.had = true; fn(L0); changed(); }   // had: this frame once held boxes, so an empty frame is a deliberate stop for carrying
 
 function carrySource() {
   const im = curImg(), g = grpName(im.name);
@@ -683,6 +683,7 @@ function carrySource() {
     const m = state.imgs[k]; if (grpName(m.name) !== g) break;
     const L = state.labels.get(m.name);
     if (L && L.boxes.length) return L.boxes.filter(x => !isBag(x) || x.st === 1);
+    if (L && (L.done || L.had)) return [];                 // marked empty, or boxes were cleared on purpose: nothing carries across it
   }
   return [];
 }
@@ -725,7 +726,7 @@ function releaseForward(si, b) {
     const idx = L.boxes.map((x, j) => (same(x) && x.st === 1 && (tagged || iou(x, b) > 0.5)) ? j : -1).filter(j => j >= 0);
     if (!idx.length) { if (tagged) continue; break; }
     const h = H(m.name); h.u.push(JSON.stringify({ boxes: L.boxes, done: L.done })); if (h.u.length > 80) h.u.shift(); h.r.length = 0;
-    L.boxes = L.boxes.filter((x, j) => !idx.includes(j)); refreshFi(m); n++;
+    L.had = true; L.boxes = L.boxes.filter((x, j) => !idx.includes(j)); refreshFi(m); n++;
   }
   return n;
 }
@@ -755,7 +756,7 @@ function deleteForward(i) {
   mutate(L2 => { L2.boxes.splice(i, 1); state.sel = -1; });
   hits.forEach(({ m, L: LL, idx }) => {
     const h = H(m.name); h.u.push(JSON.stringify({ boxes: LL.boxes, done: LL.done })); if (h.u.length > 80) h.u.shift(); h.r.length = 0;
-    LL.boxes = LL.boxes.filter((x, j) => !idx.includes(j)); refreshFi(m);
+    LL.had = true; LL.boxes = LL.boxes.filter((x, j) => !idx.includes(j)); refreshFi(m);
   });
   toast("Deleted " + tag + " from this frame" + (hits.length ? " and " + hits.length + " later frame" + (hits.length === 1 ? "" : "s") : "") + ".");
   updateAll(); requestDraw();
@@ -1486,7 +1487,7 @@ async function init() {
       if (meta) {
         if (Array.isArray(meta.classes) && meta.classes.length) state.classes = meta.classes.map(String);
         if (!state.classes.includes("hole")) state.classes.push("hole");
-        for (const [n, L] of Object.entries(meta.labels || {})) state.labels.set(n, { boxes: (L.boxes || []).map(b => { if (b.r && !b.st) { b.st = 1; } delete b.r; return b; }), done: !!L.done });
+        for (const [n, L] of Object.entries(meta.labels || {})) state.labels.set(n, { boxes: (L.boxes || []).map(b => { if (b.r && !b.st) { b.st = 1; } delete b.r; return b; }), done: !!L.done, ...(L.had ? { had: true } : {}) });
         if (Number.isInteger(meta.throwIdx) && meta.throwIdx >= 0 && meta.throwIdx <= 7) state.throwIdx = meta.throwIdx;
         if (typeof meta.autoCarry === "boolean") state.autoCarry = meta.autoCarry;
         if (typeof meta.advOnRest === "boolean") state.advOnRest = meta.advOnRest;

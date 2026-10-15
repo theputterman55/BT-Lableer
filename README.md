@@ -47,6 +47,10 @@ Zoom with the wheel, pinch, `+` / `-`, or the buttons. `0` fits the picture. At 
 - **Off the board.** When a bag leaves the board or the picture, keep it as *moved* while any of it is visible. On the first frame where it is gone, choose **Off the board** in its ☰ menu (draw a small box and tag it first if no box is there). It works like the hole marker: a one-frame purple marker, old resting copies removed, "Now drawing" moves to the next bag, and the bag count shows it as *off the board*.
 - **Not training data.** Both kinds of marker are kept in your labels file but left out of the YOLO export, because no bag is visible to box. The ring is exported as its own class, `hole`.
 
+## Notes on carrying
+
+- Stepping onto an empty frame carries the last frame's resting bags. It stops at a frame you marked empty or cleared on purpose (for example with *Delete from here on*), so a restarted video or an empty board does not pick the old bags back up.
+
 ## Notes on the export
 
 - **Split by video.** Frames from one clip look almost identical. If some land in training and some in validation, validation scores look better than they really are. So by default whole videos go to one side. With fewer than 3 videos it uses the last part of the list for validation instead. The video is taken from the file name the extractor makes.
