@@ -25,6 +25,10 @@
   button:disabled { opacity: .4; cursor: not-allowed; }
   button.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; font-weight: 600; }
   button.on { outline: 2px solid var(--accent); outline-offset: -2px; }
+  #rowMenu { position: fixed; z-index: 60; min-width: 210px; background: var(--panel); border: 1px solid #4a6076; border-radius: 10px; padding: 6px; box-shadow: 0 8px 24px rgba(0,0,0,.5); }
+  #rowMenu button { display: block; width: 100%; text-align: left; margin: 0 0 4px; }
+  #rowMenu button:last-child { margin-bottom: 0; }
+  #rowMenu .hd { font-size: 12px; color: var(--muted); padding: 2px 6px 6px; }
   .bx.editing { background: #14202c; }
   .bx .nm { flex: 1; }
   button.mini.savetab { background: transparent; border-color: var(--line); color: var(--muted, #9fb0c0); font-size: 12px; padding: 2px 8px; }
@@ -244,6 +248,7 @@
     <tr><td>Pinch</td><td>Zoom on a touch screen</td></tr>
     <tr><td>R</td><td>Selected bag has stopped: resting (red). Press again to clear</td></tr>
     <tr><td>M</td><td>A resting bag got bumped: moved (green)</td></tr>
+    <tr><td>&#9776; (bag row)</td><td>More actions for that bag: In the hole (this frame), Delete from here on (this frame and every later frame of the video), Delete this frame only.</td></tr>
     <tr><td>X</td><td>Selected bag went in the hole. On an old resting bag this declares it on this frame and releases it from the later frames.</td></tr>
     <tr><td>3, then drag</td><td>Draw the hole ring once per video (press Esc first so you do not change a selected box). It is an ellipse in its box, carries to the next frames, and turns green on a frame where a bag is declared in the hole.</td></tr>
     <tr><td>N / Shift+N</td><td>Next / previous bag to draw (Player 1 bag 1, Player 2 bag 1, ...)</td></tr>
@@ -266,7 +271,7 @@
 /* ====================== constants and state ====================== */
 const $ = id => document.getElementById(id);
 const PALETTE = ["#f5a524", "#c792ea", "#5aa9ff", "#ff6b6b", "#3ecf8e", "#ffd866", "#4dd0e1", "#ff8a65", "#a5d6a7"];
-const APP_VERSION = "7";
+const APP_VERSION = "7.1";
 // Player 1 = blue shades, Player 2 = orange shades; bag 1 darkest, bag 4 lightest.
 const BAG_SHADES = { 1: ["#1d4ed8", "#3b82f6", "#7cb8ff", "#c3dcff"], 2: ["#b84a00", "#f07a00", "#ffa940", "#ffd199"] };
 const UNTAGGED = "#c9d1d9";                              // a bag with no player/number yet
@@ -702,7 +707,7 @@ function deleteSel(force) {
   const b = curL().boxes[state.sel];
   if (b && isBag(b) && b.st === 1 && b.p && !force && pendingDel !== b) {
     pendingDel = b; edit = null; updateAll();
-    return toast("Did P" + b.p + "B" + b.n + " go in the hole? Choose in the list (or press X for the hole, Delete to just delete).");
+    return toast("Did P" + b.p + "B" + b.n + " go in the hole? Choose in the list (X = in the hole, Delete again = this frame only).");
   }
   pendingDel = null; edit = null; mutate(L => { L.boxes.splice(state.sel, 1); state.sel = -1; });
 }
@@ -722,6 +727,60 @@ function releaseForward(si, b) {
   }
   return n;
 }
+/* Every later copy of this bag in the following frames of the video (same player and number; untagged bags are followed by position). */
+function forwardHits(si, b) {
+  const g = grpName(state.imgs[si].name), tagged = !!b.p, hits = [];
+  const same = x => isBag(x) && (x.p || 0) === (b.p || 0) && (x.n || 0) === (b.n || 0);
+  let ref = { x: b.x, y: b.y, w: b.w, h: b.h };
+  for (let k = si + 1; k < state.imgs.length; k++) {
+    const m = state.imgs[k]; if (grpName(m.name) !== g) break;
+    const L = state.labels.get(m.name); if (!L || !L.boxes.length) continue;
+    let idx = [];
+    L.boxes.forEach((x, j) => { if (same(x) && (tagged || iou(x, ref) > 0.3)) idx.push(j); });
+    if (!idx.length) { if (tagged) continue; break; }
+    if (!tagged) { const x = L.boxes[idx[0]]; ref = { x: x.x, y: x.y, w: x.w, h: x.h }; idx = [idx[0]]; }
+    hits.push({ m, L, idx });
+  }
+  return hits;
+}
+/* "Delete from here on": the bag leaves this frame and every later frame of the video. */
+function deleteForward(i) {
+  const L = curL(), b = L.boxes[i];
+  if (!b || !isBag(b)) return;
+  pendingDel = null; edit = null;
+  const hits = forwardHits(state.cur, b), tag = boxTag({ ...b, st: 0 });
+  if (hits.length && !confirm("Delete " + tag + " from this frame and " + hits.length + " later frame" + (hits.length === 1 ? "" : "s") + "?")) return;
+  mutate(L2 => { L2.boxes.splice(i, 1); state.sel = -1; });
+  hits.forEach(({ m, L: LL, idx }) => {
+    const h = H(m.name); h.u.push(JSON.stringify({ boxes: LL.boxes, done: LL.done })); if (h.u.length > 80) h.u.shift(); h.r.length = 0;
+    LL.boxes = LL.boxes.filter((x, j) => !idx.includes(j)); refreshFi(m);
+  });
+  toast("Deleted " + tag + " from this frame" + (hits.length ? " and " + hits.length + " later frame" + (hits.length === 1 ? "" : "s") : "") + ".");
+  updateAll(); requestDraw();
+}
+/* The ☰ menu on each bag row. Add an entry here to add an action. */
+const ROW_MENU = [
+  { label: "In the hole (this frame)", show: b => b.st !== 3, run: i => declareHole(i) },
+  { label: "Delete from here on", show: () => true, run: i => deleteForward(i) },
+  { label: "Delete this frame only", show: () => true, run: i => { state.sel = i; deleteSel(true); } },
+];
+function closeRowMenu() { const m = document.getElementById("rowMenu"); if (m) m.remove(); }
+function openRowMenu(i, anchor) {
+  closeRowMenu();
+  const b = curL().boxes[i]; if (!b) return;
+  const m = document.createElement("div"); m.id = "rowMenu";
+  const hd = document.createElement("div"); hd.className = "hd"; hd.textContent = boxTag(b); m.append(hd);
+  ROW_MENU.filter(it => it.show(b)).forEach(it => {
+    const x = document.createElement("button"); x.type = "button"; x.textContent = it.label;
+    x.onclick = ev => { ev.stopPropagation(); closeRowMenu(); it.run(i); };
+    m.append(x);
+  });
+  document.body.append(m);
+  const r = anchor.getBoundingClientRect(), mw = m.offsetWidth, mh = m.offsetHeight;
+  m.style.left = Math.max(8, Math.min(window.innerWidth - mw - 8, r.right - mw)) + "px";
+  m.style.top = Math.max(8, Math.min(window.innerHeight - mh - 8, r.bottom + 4)) + "px";
+}
+document.addEventListener("pointerdown", e => { const m = document.getElementById("rowMenu"); if (m && !m.contains(e.target) && !(e.target.closest && e.target.closest("button.menubtn"))) closeRowMenu(); }, true);
 function declareHole(i) {
   const L = curL(), b = L.boxes[i];
   if (!b || !isBag(b)) return toast("Pick a bag's box first.");
@@ -869,6 +928,7 @@ function addClassFromInput() {
   state.classes.push(n); inp.value = ""; updateAll(); scheduleSave();
 }
 function renderBoxes() {
+  closeRowMenu();
   const L = curL(), box = $("boxList"); box.textContent = ""; hoverBox = -1;
   if (!L.boxes.length) {
     const p = document.createElement("div"); p.className = "muted";
@@ -888,7 +948,7 @@ function renderBoxes() {
       nm.textContent = boxTag(b) + ": did it go in the hole?"; nm.style.whiteSpace = "normal";
       const mk = (txt, fn) => { const x = document.createElement("button"); x.className = "mini"; x.textContent = txt; x.onclick = ev => { ev.stopPropagation(); fn(); }; return x; };
       const bar = document.createElement("div"); bar.style.cssText = "display:flex;gap:6px;width:100%";
-      bar.append(mk("In the hole", () => declareHole(i)), mk("Just delete", () => { state.sel = i; deleteSel(true); }), mk("Keep", () => { pendingDel = null; updateAll(); }));
+      bar.style.flexWrap = "wrap"; bar.append(mk("In the hole", () => declareHole(i)), mk("Delete from here on", () => deleteForward(i)), mk("This frame only", () => { state.sel = i; deleteSel(true); }), mk("Keep", () => { pendingDel = null; updateAll(); }));
       row.append(sw, nm, bar); row.onclick = () => { state.sel = i; updateAll(); requestDraw(); }; box.append(row); return;
     }
     const isEd = editing() && i === state.sel;
@@ -898,10 +958,10 @@ function renderBoxes() {
     else { pen.textContent = "✎"; pen.setAttribute("aria-label", "Edit this box"); pen.title = "Edit this box"; pen.onclick = ev => { ev.stopPropagation(); startEdit(i); }; }
     row.addEventListener("pointerenter", () => { hoverBox = i; requestDraw(); });
     row.addEventListener("pointerleave", () => { if (hoverBox === i) { hoverBox = -1; requestDraw(); } });
-    if (isBag(b) && b.st === 1 && !isEd) {
-      const hl = document.createElement("button"); hl.className = "mini"; hl.textContent = "Hole"; hl.title = "This bag went in the hole on this frame";
-      hl.onclick = ev => { ev.stopPropagation(); declareHole(i); };
-      row.append(sw, nm, pen, hl, del);
+    if (isBag(b) && !isEd) {
+      const mb = document.createElement("button"); mb.className = "mini menubtn"; mb.textContent = "☰"; mb.title = "More actions"; mb.setAttribute("aria-label", "More actions");
+      mb.onclick = ev => { ev.stopPropagation(); if (document.getElementById("rowMenu")) closeRowMenu(); else openRowMenu(i, mb); };
+      row.append(sw, nm, pen, mb, del);
     } else row.append(sw, nm, pen, del);
     row.onclick = () => { state.sel = i; updateAll(); requestDraw(); }; box.append(row);
   });
@@ -1237,7 +1297,7 @@ window.addEventListener("keydown", e => {
     case "PageUp": goTo(state.cur - 1); e.preventDefault(); return;
     case "PageDown": goTo(state.cur + 1); e.preventDefault(); return;
     case "Delete": case "Backspace": deleteSel(); e.preventDefault(); return;
-    case "Escape": if (pendingDel) { pendingDel = null; updateAll(); return; } if (editing()) { cancelEdit(); return; } edit = null; state.sel = -1; gesture = null; updateAll(); requestDraw(); return;
+    case "Escape": if (document.getElementById("rowMenu")) { closeRowMenu(); return; } if (pendingDel) { pendingDel = null; updateAll(); return; } if (editing()) { cancelEdit(); return; } edit = null; state.sel = -1; gesture = null; updateAll(); requestDraw(); return;
     case "+": case "=": zoomAt(view.w / 2, view.h / 2, 1.5); return;
     case "-": case "_": zoomAt(view.w / 2, view.h / 2, 1 / 1.5); return;
     case "0": if (holdView) setHold(false); else { fitView(); requestDraw(); } return;

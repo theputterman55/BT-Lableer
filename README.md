@@ -42,7 +42,8 @@ Zoom with the wheel, pinch, `+` / `-`, or the buttons. `0` fits the picture. At 
 ## Bags in the hole
 
 - **Hole ring.** Press `3` and drag a box around the hole: it is drawn as a yellow ellipse and carries to the following frames like a board. Draw it once per video.
-- **Declaring it.** When a resting bag is gone because it went in the hole, click **Hole** on its row (or press `X` on its box, or delete its box and choose **In the hole**). That frame gets a one-frame in-the-hole marker, the ring turns green on it, and the bag's old resting boxes are removed from the later frames. Deleting a resting bag's box always asks first: *In the hole*, *Just delete*, or *Keep*.
+- **The ☰ menu.** Every bag row has a ☰ button with: *In the hole (this frame)*, *Delete from here on* (removes that bag from this frame and every later frame of the video, after asking you to confirm) and *Delete this frame only*. More actions can be added there later.
+- **Declaring it.** When a resting bag is gone because it went in the hole, choose **In the hole** in its ☰ menu (or press `X` on its box, or delete its box and choose **In the hole**). That frame gets a one-frame in-the-hole marker, the ring turns green on it, and the bag's old resting boxes are removed from the later frames. Deleting a resting bag's box always asks first: *In the hole*, *Delete from here on*, *This frame only*, or *Keep*.
 - **Not training data.** Those markers are kept in your labels file but left out of the YOLO export, because no bag is visible to box. The ring is exported as its own class, `hole`.
 
 ## Notes on the export
