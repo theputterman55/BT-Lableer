@@ -265,7 +265,7 @@
 /* ====================== constants and state ====================== */
 const $ = id => document.getElementById(id);
 const PALETTE = ["#f5a524", "#c792ea", "#5aa9ff", "#ff6b6b", "#3ecf8e", "#ffd866", "#4dd0e1", "#ff8a65", "#a5d6a7"];
-const APP_VERSION = "6.1";
+const APP_VERSION = "6.1.1";
 // Player 1 = blue shades, Player 2 = orange shades; bag 1 darkest, bag 4 lightest.
 const BAG_SHADES = { 1: ["#1d4ed8", "#3b82f6", "#7cb8ff", "#c3dcff"], 2: ["#b84a00", "#f07a00", "#ffa940", "#ffd199"] };
 const UNTAGGED = "#c9d1d9";                              // a bag with no player/number yet
@@ -541,6 +541,7 @@ const getBmp = im => { let p = bmpCache.get(im.name); if (!p) { p = createImageB
 function trimCache(keep) { for (const [n, p] of bmpCache) if (!keep.has(n)) { bmpCache.delete(n); p.then(b => b.close()).catch(() => {}); } }
 let loadTok = 0;
 /* ---- edit mode: the pencil in "Boxes on this image" ---- */
+let hoverBox = -1;                       // index of the box whose row the pointer is over (pulses on the picture)
 let edit = null;                         // { box, before, ulen } while one box is being adjusted
 const editing = () => !!(edit && curImg() && curL().boxes[state.sel] === edit.box);
 function startEdit(i) {
@@ -769,7 +770,7 @@ function addClassFromInput() {
   state.classes.push(n); inp.value = ""; updateAll(); scheduleSave();
 }
 function renderBoxes() {
-  const L = curL(), box = $("boxList"); box.textContent = "";
+  const L = curL(), box = $("boxList"); box.textContent = ""; hoverBox = -1;
   if (!L.boxes.length) {
     const p = document.createElement("div"); p.className = "muted";
     p.textContent = curImg() ? (L.done ? "Marked as empty background." : "None yet. Drag on the picture to draw one.") : "";
@@ -788,6 +789,8 @@ function renderBoxes() {
     const pen = document.createElement("button"); pen.className = "mini pen" + (isEd ? " savetab" : "");
     if (isEd) { pen.textContent = "Save"; pen.setAttribute("aria-label", "Save to this frame"); pen.title = "Save the new position and size to this frame (Enter)"; pen.onclick = ev => { ev.stopPropagation(); saveEdit(); }; }
     else { pen.textContent = "✎"; pen.setAttribute("aria-label", "Edit this box"); pen.title = "Edit this box"; pen.onclick = ev => { ev.stopPropagation(); startEdit(i); }; }
+    row.addEventListener("pointerenter", () => { hoverBox = i; requestDraw(); });
+    row.addEventListener("pointerleave", () => { if (hoverBox === i) { hoverBox = -1; requestDraw(); } });
     row.append(sw, nm, pen, del); row.onclick = () => { state.sel = i; updateAll(); requestDraw(); }; box.append(row);
   });
 }
@@ -929,6 +932,14 @@ function draw() {
       if (b.w > ins * 3 && b.h > ins * 3) { ctx.lineWidth = 2.5 / s; ctx.strokeStyle = sc; ctx.strokeRect(b.x + ins, b.y + ins, b.w - ins * 2, b.h - ins * 2); }
     }
     if (isBag(b) && b.st === 3) { ctx.lineWidth = 2 / s; ctx.strokeStyle = HOLE_COLOR; ctx.beginPath(); ctx.moveTo(b.x, b.y); ctx.lineTo(b.x + b.w, b.y + b.h); ctx.moveTo(b.x + b.w, b.y); ctx.lineTo(b.x, b.y + b.h); ctx.stroke(); }
+  }
+  const hb = bs[hoverBox];
+  if (hb) {                              // pulse the box whose list row the pointer is over
+    const k = (Math.sin(performance.now() / 160) + 1) / 2;
+    ctx.fillStyle = "rgba(255,255,255," + (0.10 + 0.22 * k).toFixed(3) + ")"; ctx.fillRect(hb.x, hb.y, hb.w, hb.h);
+    ctx.lineWidth = (4 + 5 * k) / s; ctx.strokeStyle = "rgba(255,255,255," + (0.55 + 0.45 * k).toFixed(3) + ")"; ctx.strokeRect(hb.x, hb.y, hb.w, hb.h);
+    ctx.lineWidth = 2 / s; ctx.strokeStyle = boxColor(hb); ctx.strokeRect(hb.x, hb.y, hb.w, hb.h);
+    requestDraw();
   }
   const g = gesture;
   if (g && g.kind === "draw" && g.moved) {
