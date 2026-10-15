@@ -272,7 +272,7 @@
 /* ====================== constants and state ====================== */
 const $ = id => document.getElementById(id);
 const PALETTE = ["#f5a524", "#c792ea", "#5aa9ff", "#ff6b6b", "#3ecf8e", "#ffd866", "#4dd0e1", "#ff8a65", "#a5d6a7"];
-const APP_VERSION = "7.3";
+const APP_VERSION = "7.4";
 // Player 1 = blue shades, Player 2 = orange shades; bag 1 darkest, bag 4 lightest.
 const BAG_SHADES = { 1: ["#1d4ed8", "#3b82f6", "#7cb8ff", "#c3dcff"], 2: ["#b84a00", "#f07a00", "#ffa940", "#ffd199"] };
 const UNTAGGED = "#c9d1d9";                              // a bag with no player/number yet
@@ -790,6 +790,13 @@ function declareHole(i) {
   mutate(L2 => { const x = L2.boxes[i]; x.st = 3; x.ev = 1; });
   const n = releaseForward(state.cur, copy);
   toast(boxTag({ ...copy, st: 0 }) + " went in the hole on this frame." + (n ? " Removed its old resting box from " + n + " later frame" + (n === 1 ? "" : "s") + "." : "") + (copy.p ? "" : " Tip: tag the bag (P and number) so it can be followed."));
+  // the bag being drawn is now in the hole, so its sequence is done: line up the next bag (same rule as R and X)
+  const t = bagNow();
+  if (state.advOnRest && copy.p === t.p && copy.n === t.n && state.throwIdx < 7) {
+    setThrow(state.throwIdx + 1);
+    const nx = bagNow();
+    toast("P" + t.p + " B" + t.n + " is in the hole. Now drawing Player " + nx.p + " · Bag " + nx.n + ".");
+  }
   updateAll(); requestDraw();
 }
 function setClass(i) {
