@@ -244,7 +244,8 @@
     <tr><td>Pinch</td><td>Zoom on a touch screen</td></tr>
     <tr><td>R</td><td>Selected bag has stopped: resting (red). Press again to clear</td></tr>
     <tr><td>M</td><td>A resting bag got bumped: moved (green)</td></tr>
-    <tr><td>X</td><td>Selected bag went in the hole</td></tr>
+    <tr><td>X</td><td>Selected bag went in the hole. On an old resting bag this declares it on this frame and releases it from the later frames.</td></tr>
+    <tr><td>3, then drag</td><td>Draw the hole ring once per video (press Esc first so you do not change a selected box). It is an ellipse in its box, carries to the next frames, and turns green on a frame where a bag is declared in the hole.</td></tr>
     <tr><td>N / Shift+N</td><td>Next / previous bag to draw (Player 1 bag 1, Player 2 bag 1, ...)</td></tr>
     <tr><td>P</td><td>Switch between Player 1 and Player 2</td></tr>
     <tr><td>T</td><td>Give the selected box the bag chosen under "Now drawing"</td></tr>
@@ -265,7 +266,7 @@
 /* ====================== constants and state ====================== */
 const $ = id => document.getElementById(id);
 const PALETTE = ["#f5a524", "#c792ea", "#5aa9ff", "#ff6b6b", "#3ecf8e", "#ffd866", "#4dd0e1", "#ff8a65", "#a5d6a7"];
-const APP_VERSION = "6.3";
+const APP_VERSION = "7";
 // Player 1 = blue shades, Player 2 = orange shades; bag 1 darkest, bag 4 lightest.
 const BAG_SHADES = { 1: ["#1d4ed8", "#3b82f6", "#7cb8ff", "#c3dcff"], 2: ["#b84a00", "#f07a00", "#ffa940", "#ffd199"] };
 const UNTAGGED = "#c9d1d9";                              // a bag with no player/number yet
@@ -285,7 +286,9 @@ function boxTag(b) {
   return t;
 }
 const grpName = n => n.replace(/_\d{4,}_t[\d.]+s(?=\.[^.]+$)/i, "").replace(/\.[^.]+$/, "");
-const colorOf = i => PALETTE[((i % PALETTE.length) + PALETTE.length) % PALETTE.length];
+const HOLE_RING = "#ffe066", HOLE_ON = "#3ecf8e";
+const colorOf = i => state.classes[i] === "hole" ? HOLE_RING : PALETTE[((i % PALETTE.length) + PALETTE.length) % PALETTE.length];
+const isHole = b => !isBag(b) && state.classes[b.c] === "hole";
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 const MIN_BOX = 3;                       // smallest box side, in image pixels
 const IMG_RE = /\.(jpe?g|png|webp|bmp)$/i;
@@ -297,7 +300,7 @@ const clampNum = (v, a, b, d) => { v = parseFloat(v); return isFinite(v) ? clamp
 
 const state = {
   imgs: [],                              // { name, blob, w, h, t, thumb, _el, _n }
-  classes: ["bag", "board"],
+  classes: ["bag", "board", "hole"],
   throwIdx: 0,                           // 0..7 : P1B1, P2B1, P1B2, P2B2, ...
   autoCarry: true,
   advOnRest: true,                       // after R or X on the bag being drawn, move to the next bag
@@ -621,6 +624,7 @@ function cancelEdit(quiet) {
 }
 async function goTo(i) {
   if (!state.imgs.length) return;
+  pendingDel = null;
   if (edit) saveEdit(true);
   if (visitDirty && state.cur >= 0 && state.imgs[state.cur]) { const n = syncForward(state.cur); if (n) toast("Resting bags updated on " + n + " later frame" + (n === 1 ? "" : "s") + "."); }
   visitDirty = false;
@@ -692,7 +696,42 @@ function addBox(b) {
   mutate(L => { L.boxes.push(...carried, b); L.done = false; state.sel = L.boxes.length - 1; });
   if (carried.length) toast("Carried " + carried.length + " resting bag/board box" + (carried.length === 1 ? "" : "es") + " from the last frame.");
 }
-function deleteSel() { if (state.sel < 0) return; edit = null; mutate(L => { L.boxes.splice(state.sel, 1); state.sel = -1; }); }
+let pendingDel = null;                   // a resting bag whose delete is waiting for "did it go in the hole?"
+function deleteSel(force) {
+  if (state.sel < 0) return;
+  const b = curL().boxes[state.sel];
+  if (b && isBag(b) && b.st === 1 && b.p && !force && pendingDel !== b) {
+    pendingDel = b; edit = null; updateAll();
+    return toast("Did P" + b.p + "B" + b.n + " go in the hole? Choose in the list (or press X for the hole, Delete to just delete).");
+  }
+  pendingDel = null; edit = null; mutate(L => { L.boxes.splice(state.sel, 1); state.sel = -1; });
+}
+/* The bag went in the hole on this frame: its box becomes a one-frame marker (no bag is visible to box), it is no longer
+   carried, and its old resting copies on the following labeled frames are removed. */
+function releaseForward(si, b) {
+  const g = grpName(state.imgs[si].name), tagged = !!b.p; let n = 0;
+  const same = x => isBag(x) && (x.p || 0) === (b.p || 0) && (x.n || 0) === (b.n || 0);
+  for (let k = si + 1; k < state.imgs.length; k++) {
+    const m = state.imgs[k]; if (grpName(m.name) !== g) break;
+    const L = state.labels.get(m.name); if (!L || !L.boxes.length) break;
+    if (tagged && L.boxes.some(x => same(x) && x.st !== 1)) break;
+    const idx = L.boxes.map((x, j) => (same(x) && x.st === 1 && (tagged || iou(x, b) > 0.5)) ? j : -1).filter(j => j >= 0);
+    if (!idx.length) { if (tagged) continue; break; }
+    const h = H(m.name); h.u.push(JSON.stringify({ boxes: L.boxes, done: L.done })); if (h.u.length > 80) h.u.shift(); h.r.length = 0;
+    L.boxes = L.boxes.filter((x, j) => !idx.includes(j)); refreshFi(m); n++;
+  }
+  return n;
+}
+function declareHole(i) {
+  const L = curL(), b = L.boxes[i];
+  if (!b || !isBag(b)) return toast("Pick a bag's box first.");
+  pendingDel = null; edit = null;
+  const copy = { ...b };
+  mutate(L2 => { const x = L2.boxes[i]; x.st = 3; x.ev = 1; });
+  const n = releaseForward(state.cur, copy);
+  toast(boxTag({ ...copy, st: 0 }) + " went in the hole on this frame." + (n ? " Removed its old resting box from " + n + " later frame" + (n === 1 ? "" : "s") + "." : "") + (copy.p ? "" : " Tip: tag the bag (P and number) so it can be followed."));
+  updateAll(); requestDraw();
+}
 function setClass(i) {
   state.curClass = i;
   if (state.sel >= 0 && curL().boxes[state.sel] && curL().boxes[state.sel].c !== i) mutate(L => { L.boxes[state.sel].c = i; });
@@ -709,6 +748,7 @@ function copyPrev() {
   if (!src || !src.boxes.length) return toast("The previous image has no boxes.");
   const L = curL(), W = bmp.width, Hh = bmp.height, add = [], upd = [];
   for (const b of src.boxes) {
+    if (b.ev) continue;                                   // an in-the-hole marker belongs to one frame only
     const nb = cloneBox(b, W, Hh);
     if (L.boxes.some(o => o.c === nb.c && iou(o, nb) > 0.9)) continue;
     // the same resting bag already sits here at an older spot: the copy replaces it instead of doubling it
@@ -843,6 +883,14 @@ function renderBoxes() {
     if (stateColor(b)) { nm.style.color = stateColor(b); row.style.borderColor = stateColor(b); row.style.borderWidth = "2px"; }
     const del = document.createElement("button"); del.className = "mini"; del.textContent = "✕"; del.setAttribute("aria-label", "Delete box");
     del.onclick = ev => { ev.stopPropagation(); edit = null; state.sel = i; deleteSel(); };
+    if (pendingDel === b) {                                 // asked: did this bag go in the hole?
+      row.classList.add("editing"); row.style.flexWrap = "wrap"; row.style.borderStyle = "dashed";
+      nm.textContent = boxTag(b) + ": did it go in the hole?"; nm.style.whiteSpace = "normal";
+      const mk = (txt, fn) => { const x = document.createElement("button"); x.className = "mini"; x.textContent = txt; x.onclick = ev => { ev.stopPropagation(); fn(); }; return x; };
+      const bar = document.createElement("div"); bar.style.cssText = "display:flex;gap:6px;width:100%";
+      bar.append(mk("In the hole", () => declareHole(i)), mk("Just delete", () => { state.sel = i; deleteSel(true); }), mk("Keep", () => { pendingDel = null; updateAll(); }));
+      row.append(sw, nm, bar); row.onclick = () => { state.sel = i; updateAll(); requestDraw(); }; box.append(row); return;
+    }
     const isEd = editing() && i === state.sel;
     if (isEd) { row.classList.add("editing"); row.style.borderStyle = "dashed"; }
     const pen = document.createElement("button"); pen.className = "mini pen" + (isEd ? " savetab" : "");
@@ -850,7 +898,12 @@ function renderBoxes() {
     else { pen.textContent = "✎"; pen.setAttribute("aria-label", "Edit this box"); pen.title = "Edit this box"; pen.onclick = ev => { ev.stopPropagation(); startEdit(i); }; }
     row.addEventListener("pointerenter", () => { hoverBox = i; requestDraw(); });
     row.addEventListener("pointerleave", () => { if (hoverBox === i) { hoverBox = -1; requestDraw(); } });
-    row.append(sw, nm, pen, del); row.onclick = () => { state.sel = i; updateAll(); requestDraw(); }; box.append(row);
+    if (isBag(b) && b.st === 1 && !isEd) {
+      const hl = document.createElement("button"); hl.className = "mini"; hl.textContent = "Hole"; hl.title = "This bag went in the hole on this frame";
+      hl.onclick = ev => { ev.stopPropagation(); declareHole(i); };
+      row.append(sw, nm, pen, hl, del);
+    } else row.append(sw, nm, pen, del);
+    row.onclick = () => { state.sel = i; updateAll(); requestDraw(); }; box.append(row);
   });
 }
 function updateAll() {
@@ -892,7 +945,7 @@ document.querySelectorAll("[data-tool]").forEach(b => b.onclick = () => setTool(
 $("prevBtn").onclick = () => goTo(state.cur - 1);
 $("nextBtn").onclick = () => goTo(state.cur + 1);
 $("copyBtn").onclick = copyPrev; $("emptyBtn").onclick = markEmpty; $("undoBtn").onclick = undo; $("redoBtn").onclick = redo;
-$("delBtn").onclick = deleteSel; $("nextUnBtn").onclick = nextUnlabeled;
+$("delBtn").onclick = () => deleteSel(); $("nextUnBtn").onclick = nextUnlabeled;
 
 /* ====================== canvas view ====================== */
 const stage = $("stage"), ctx = stage.getContext("2d");
@@ -978,8 +1031,18 @@ function draw() {
   ctx.imageSmoothingEnabled = s < 4;
   ctx.drawImage(bmp, 0, 0);
   const bs = curL().boxes;
+  const holeNow = bs.filter(x => isBag(x) && x.st === 3 && x.ev).map(x => boxTag({ ...x, st: 0 }));   // bags declared in the hole on this frame
   for (let i = 0; i < bs.length; i++) {
     const b = bs[i], col = boxColor(b), sc = stateColor(b);
+    if (isHole(b)) {                                     // the hole ring: an ellipse inside its box, green on an in-the-hole frame
+      const on = holeNow.length > 0, rc = on ? HOLE_ON : HOLE_RING;
+      ctx.beginPath(); ctx.ellipse(b.x + b.w / 2, b.y + b.h / 2, b.w / 2, b.h / 2, 0, 0, Math.PI * 2);
+      if (on) { ctx.fillStyle = "rgba(62,207,142,.28)"; ctx.fill(); }
+      if (i === state.sel) { ctx.fillStyle = rc + "33"; ctx.fill(); }
+      ctx.lineWidth = (on ? 7 : 5) / s; ctx.strokeStyle = "rgba(0,0,0,.65)"; ctx.stroke();
+      ctx.lineWidth = (on ? 4.5 : 3) / s; ctx.strokeStyle = rc; ctx.stroke();
+      continue;
+    }
     if (isBag(b) && b.st === 1) { ctx.fillStyle = "rgba(255,45,45,.14)"; ctx.fillRect(b.x, b.y, b.w, b.h); }
     if (i === state.sel) { ctx.fillStyle = col + "33"; ctx.fillRect(b.x, b.y, b.w, b.h); }
     ctx.lineWidth = 4 / s; ctx.strokeStyle = "rgba(0,0,0,.65)"; ctx.strokeRect(b.x, b.y, b.w, b.h);
@@ -1009,8 +1072,8 @@ function draw() {
   if (state.showLabels) {
     ctx.font = "600 12px system-ui, sans-serif"; ctx.textBaseline = "middle";
     for (const b of bs) {
-      const t = boxTag(b), sc = stateColor(b), blk = sc ? 7 : 0, w = ctx.measureText(t).width + 8 + blk;
-      const x = ox + b.x * s, y = oy + b.y * s, ty = y - 8 < 0 ? y + 9 : y - 9, col = boxColor(b);
+      const t = isHole(b) && holeNow.length ? "hole · " + holeNow.join(", ") + " in the hole" : boxTag(b), sc = stateColor(b), blk = sc ? 7 : 0, w = ctx.measureText(t).width + 8 + blk;
+      const x = ox + b.x * s, y = oy + b.y * s, ty = y - 8 < 0 ? y + 9 : y - 9, col = isHole(b) && holeNow.length ? HOLE_ON : boxColor(b);
       ctx.fillStyle = col; ctx.fillRect(x, ty - 8, w, 16);
       if (sc) { ctx.fillStyle = sc; ctx.fillRect(x, ty - 8, blk, 16); }
       ctx.fillStyle = textOn(col); ctx.fillText(t, x + 4 + blk, ty);
@@ -1174,7 +1237,7 @@ window.addEventListener("keydown", e => {
     case "PageUp": goTo(state.cur - 1); e.preventDefault(); return;
     case "PageDown": goTo(state.cur + 1); e.preventDefault(); return;
     case "Delete": case "Backspace": deleteSel(); e.preventDefault(); return;
-    case "Escape": if (editing()) { cancelEdit(); return; } edit = null; state.sel = -1; gesture = null; updateAll(); requestDraw(); return;
+    case "Escape": if (pendingDel) { pendingDel = null; updateAll(); return; } if (editing()) { cancelEdit(); return; } edit = null; state.sel = -1; gesture = null; updateAll(); requestDraw(); return;
     case "+": case "=": zoomAt(view.w / 2, view.h / 2, 1.5); return;
     case "-": case "_": zoomAt(view.w / 2, view.h / 2, 1 / 1.5); return;
     case "0": if (holdView) setHold(false); else { fitView(); requestDraw(); } return;
@@ -1191,7 +1254,12 @@ window.addEventListener("keydown", e => {
     case "u": nextUnlabeled(); break;
     case "r": toggleState(1); break;
     case "m": toggleState(2); break;
-    case "x": toggleState(3); break;
+    case "x": {
+      const xb = curL().boxes[state.sel], xt = bagNow();
+      if (xb && isBag(xb) && (pendingDel === xb || (xb.st === 1 && !(xb.p === xt.p && xb.n === xt.n)))) declareHole(state.sel);
+      else toggleState(3);
+      break;
+    }
     case "n": setThrow(state.throwIdx + (e.shiftKey ? -1 : 1)); break;
     case "p": setThrow(throwIndex(bagNow().p === 1 ? 2 : 1, bagNow().n)); break;
     case "t": applyBag(); break;
@@ -1208,7 +1276,7 @@ function saveLabelsFile() {
   state.labels.forEach((L, name) => {
     if (!L.boxes.length && !L.done) return;
     const im = state.imgs.find(i => i.name === name);
-    images[name] = { w: im ? im.w : null, h: im ? im.h : null, done: L.done, boxes: L.boxes.map(b => { const o = { c: b.c, x: +b.x.toFixed(2), y: +b.y.toFixed(2), w: +b.w.toFixed(2), h: +b.h.toFixed(2) }; if (b.p) { o.p = b.p; o.n = b.n; } if (b.st) o.st = b.st; return o; }) };
+    images[name] = { w: im ? im.w : null, h: im ? im.h : null, done: L.done, boxes: L.boxes.map(b => { const o = { c: b.c, x: +b.x.toFixed(2), y: +b.y.toFixed(2), w: +b.w.toFixed(2), h: +b.h.toFixed(2) }; if (b.p) { o.p = b.p; o.n = b.n; } if (b.st) o.st = b.st; if (b.ev) o.ev = 1; return o; }) };
   });
   if (!Object.keys(images).length) return toast("No labels to save yet.");
   const d = new Date(), p2 = n => String(n).padStart(2, "0");
@@ -1225,7 +1293,7 @@ async function importLabels(file) {
   let n = 0, pending = 0;
   for (const [name, v] of Object.entries(o.images)) {
     const boxes = (v.boxes || []).filter(b => map[b.c] !== undefined && [b.x, b.y, b.w, b.h].every(Number.isFinite) && b.w > 0 && b.h > 0)
-      .map(b => { const o = { c: map[b.c], x: +b.x, y: +b.y, w: +b.w, h: +b.h }; if (b.p >= 1 && b.p <= 2 && b.n >= 1 && b.n <= 4) { o.p = +b.p; o.n = +b.n; } const st = b.st || (b.r ? 1 : 0); if (st >= 1 && st <= 3) o.st = st; return o; });
+      .map(b => { const o = { c: map[b.c], x: +b.x, y: +b.y, w: +b.w, h: +b.h }; if (b.p >= 1 && b.p <= 2 && b.n >= 1 && b.n <= 4) { o.p = +b.p; o.n = +b.n; } const st = b.st || (b.r ? 1 : 0); if (st >= 1 && st <= 3) o.st = st; if (b.ev && o.st === 3) o.ev = 1; return o; });
     state.labels.set(name, { boxes, done: !!v.done && !boxes.length });
     n++; if (!have.has(name)) pending++;
   }
@@ -1266,7 +1334,7 @@ function refreshExportPreview() {
   const { pct, method, neg } = exportSettings();
   const items = exportItems(neg), val = makeSplit(items, pct, method);
   const groups = new Set(items.map(i => groupOf(i.name)));
-  let nb = 0; items.forEach(im => { nb += state.labels.get(im.name).boxes.length; });
+  let nb = 0; items.forEach(im => { nb += state.labels.get(im.name).boxes.filter(b => !b.ev).length; });
   const lines = [items.length + " images (" + (items.length - val.size) + " train, " + val.size + " validation) from " + groups.size + " video" + (groups.size === 1 ? "" : "s") + ", " + nb + " boxes."];
   if (method === "video" && groups.size < 3 && pct > 0) lines.push("Fewer than 3 videos, so the last part of the list is used for validation instead.");
   const unused = state.classes.filter((c, i) => !items.some(im => state.labels.get(im.name).boxes.some(b => b.c === i)));
@@ -1295,7 +1363,7 @@ async function doExport() {
       used.add(safe.toLowerCase());
       const stem = safe.replace(/\.[^.]+$/, "");
       await zip.addBlob("images/" + split + "/" + safe, im.blob);
-      const lines = L.boxes.map(b => {
+      const lines = L.boxes.filter(b => !b.ev).map(b => {
         const cx = clamp((b.x + b.w / 2) / im.w, 0, 1), cy = clamp((b.y + b.h / 2) / im.h, 0, 1);
         const w = clamp(b.w / im.w, 0, 1), h = clamp(b.h / im.h, 0, 1);
         return b.c + " " + cx.toFixed(6) + " " + cy.toFixed(6) + " " + w.toFixed(6) + " " + h.toFixed(6);
@@ -1345,6 +1413,7 @@ async function init() {
       const [meta, recs] = await Promise.all([r1, r2]);
       if (meta) {
         if (Array.isArray(meta.classes) && meta.classes.length) state.classes = meta.classes.map(String);
+        if (!state.classes.includes("hole")) state.classes.push("hole");
         for (const [n, L] of Object.entries(meta.labels || {})) state.labels.set(n, { boxes: (L.boxes || []).map(b => { if (b.r && !b.st) { b.st = 1; } delete b.r; return b; }), done: !!L.done });
         if (Number.isInteger(meta.throwIdx) && meta.throwIdx >= 0 && meta.throwIdx <= 7) state.throwIdx = meta.throwIdx;
         if (typeof meta.autoCarry === "boolean") state.autoCarry = meta.autoCarry;

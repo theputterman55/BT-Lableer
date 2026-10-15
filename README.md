@@ -39,6 +39,12 @@ Zoom with the wheel, pinch, `+` / `-`, or the buttons. `0` fits the picture. At 
 | `L` | Show or hide box labels |
 | `?` | Help |
 
+## Bags in the hole
+
+- **Hole ring.** Press `3` and drag a box around the hole: it is drawn as a yellow ellipse and carries to the following frames like a board. Draw it once per video.
+- **Declaring it.** When a resting bag is gone because it went in the hole, click **Hole** on its row (or press `X` on its box, or delete its box and choose **In the hole**). That frame gets a one-frame in-the-hole marker, the ring turns green on it, and the bag's old resting boxes are removed from the later frames. Deleting a resting bag's box always asks first: *In the hole*, *Just delete*, or *Keep*.
+- **Not training data.** Those markers are kept in your labels file but left out of the YOLO export, because no bag is visible to box. The ring is exported as its own class, `hole`.
+
 ## Notes on the export
 
 - **Split by video.** Frames from one clip look almost identical. If some land in training and some in validation, validation scores look better than they really are. So by default whole videos go to one side. With fewer than 3 videos it uses the last part of the list for validation instead. The video is taken from the file name the extractor makes.
