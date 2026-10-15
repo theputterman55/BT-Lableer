@@ -80,6 +80,7 @@
   .toast.bad { border-color: var(--bad); }
 
   .side { overflow: auto; border-left: 1px solid var(--line); padding: 10px; display: flex; flex-direction: column; gap: 14px; background: var(--panel); }
+  #pos { font-size: 15px; color: #fff; font-weight: 700; letter-spacing: .5px; text-transform: none; }
   .side h3 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); font-weight: 600; }
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
   .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
@@ -271,7 +272,7 @@
 /* ====================== constants and state ====================== */
 const $ = id => document.getElementById(id);
 const PALETTE = ["#f5a524", "#c792ea", "#5aa9ff", "#ff6b6b", "#3ecf8e", "#ffd866", "#4dd0e1", "#ff8a65", "#a5d6a7"];
-const APP_VERSION = "7.2";
+const APP_VERSION = "7.3";
 // Player 1 = blue shades, Player 2 = orange shades; bag 1 darkest, bag 4 lightest.
 const BAG_SHADES = { 1: ["#1d4ed8", "#3b82f6", "#7cb8ff", "#c3dcff"], 2: ["#b84a00", "#f07a00", "#ffa940", "#ffd199"] };
 const UNTAGGED = "#c9d1d9";                              // a bag with no player/number yet
