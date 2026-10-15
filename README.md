@@ -42,9 +42,10 @@ Zoom with the wheel, pinch, `+` / `-`, or the buttons. `0` fits the picture. At 
 ## Bags in the hole
 
 - **Hole ring.** Press `3` and drag a box around the hole: it is drawn as a yellow ellipse and carries to the following frames like a board. Draw it once per video.
-- **The ☰ menu.** Every bag row has a ☰ button with: *In the hole (this frame)*, *Delete from here on* (removes that bag from this frame and every later frame of the video, after asking you to confirm) and *Delete this frame only*. More actions can be added there later.
+- **The ☰ menu.** Every bag row has a ☰ button with: *In the hole (this frame)*, *Off the board (this frame)*, *Delete from here on* (removes that bag from this frame and every later frame of the video, after asking you to confirm) and *Delete this frame only*. More actions can be added there later.
 - **Declaring it.** When a resting bag is gone because it went in the hole, choose **In the hole** in its ☰ menu (or press `X` on its box, or delete its box and choose **In the hole**). That frame gets a one-frame in-the-hole marker, the ring turns green on it, and the bag's old resting boxes are removed from the later frames. Deleting a resting bag's box always asks first: *In the hole*, *Delete from here on*, *This frame only*, or *Keep*.
-- **Not training data.** Those markers are kept in your labels file but left out of the YOLO export, because no bag is visible to box. The ring is exported as its own class, `hole`.
+- **Off the board.** When a bag leaves the board or the picture, keep it as *moved* while any of it is visible. On the first frame where it is gone, choose **Off the board** in its ☰ menu (draw a small box and tag it first if no box is there). It works like the hole marker: a one-frame purple marker, old resting copies removed, "Now drawing" moves to the next bag, and the bag count shows it as *off the board*.
+- **Not training data.** Both kinds of marker are kept in your labels file but left out of the YOLO export, because no bag is visible to box. The ring is exported as its own class, `hole`.
 
 ## Notes on the export
 

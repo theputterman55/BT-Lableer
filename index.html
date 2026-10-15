@@ -250,6 +250,7 @@
     <tr><td>R</td><td>Selected bag has stopped: resting (red). Press again to clear</td></tr>
     <tr><td>M</td><td>A resting bag got bumped: moved (green)</td></tr>
     <tr><td>&#9776; (bag row)</td><td>More actions for that bag: In the hole (this frame), Delete from here on (this frame and every later frame of the video), Delete this frame only.</td></tr>
+    <tr><td>&#9776; &rarr; Off the board</td><td>The bag left the board or the picture. Marks that frame with a one-frame purple marker (like the hole one, not training data) and removes the bag's old resting boxes from later frames. Keep the bag as moved while any of it is visible.</td></tr>
     <tr><td>X</td><td>Selected bag went in the hole. On an old resting bag this declares it on this frame and releases it from the later frames.</td></tr>
     <tr><td>3, then drag</td><td>Draw the hole ring once per video (press Esc first so you do not change a selected box). It is an ellipse in its box, carries to the next frames, and turns green on a frame where a bag is declared in the hole.</td></tr>
     <tr><td>N / Shift+N</td><td>Next / previous bag to draw (Player 1 bag 1, Player 2 bag 1, ...)</td></tr>
@@ -272,14 +273,14 @@
 /* ====================== constants and state ====================== */
 const $ = id => document.getElementById(id);
 const PALETTE = ["#f5a524", "#c792ea", "#5aa9ff", "#ff6b6b", "#3ecf8e", "#ffd866", "#4dd0e1", "#ff8a65", "#a5d6a7"];
-const APP_VERSION = "7.4";
+const APP_VERSION = "7.5";
 // Player 1 = blue shades, Player 2 = orange shades; bag 1 darkest, bag 4 lightest.
 const BAG_SHADES = { 1: ["#1d4ed8", "#3b82f6", "#7cb8ff", "#c3dcff"], 2: ["#b84a00", "#f07a00", "#ffa940", "#ffd199"] };
 const UNTAGGED = "#c9d1d9";                              // a bag with no player/number yet
-const REST_COLOR = "#ff2d2d", SHIFT_COLOR = "#3ecf8e", HOLE_COLOR = "#ffffff";
+const REST_COLOR = "#ff2d2d", SHIFT_COLOR = "#3ecf8e", HOLE_COLOR = "#ffffff", OFF_COLOR = "#c084fc";
 const isBag = b => b.c === 0;
 const shadeOf = (p, n) => (BAG_SHADES[p] && BAG_SHADES[p][n - 1]) || UNTAGGED;
-const stateColor = b => (isBag(b) ? (b.st === 1 ? REST_COLOR : b.st === 2 ? SHIFT_COLOR : b.st === 3 ? HOLE_COLOR : null) : null);
+const stateColor = b => (isBag(b) ? (b.st === 1 ? REST_COLOR : b.st === 2 ? SHIFT_COLOR : b.st === 3 ? HOLE_COLOR : b.st === 4 ? OFF_COLOR : null) : null);
 function boxColor(b) { return isBag(b) ? (b.p ? shadeOf(b.p, b.n) : UNTAGGED) : colorOf(b.c); }
 function textOn(hex) {
   const v = parseInt(hex.slice(1), 16), r = v >> 16, g = (v >> 8) & 255, bl = v & 255;
@@ -288,7 +289,7 @@ function textOn(hex) {
 function boxTag(b) {
   let t = state.classes[b.c] || "?";
   if (isBag(b) && b.p) t = "P" + b.p + "B" + b.n;
-  if (isBag(b)) t += b.st === 1 ? " · resting" : b.st === 2 ? " · moved" : b.st === 3 ? " · in hole" : "";
+  if (isBag(b)) t += b.st === 1 ? " · resting" : b.st === 2 ? " · moved" : b.st === 3 ? " · in hole" : b.st === 4 ? " · off board" : "";
   return t;
 }
 const grpName = n => n.replace(/_\d{4,}_t[\d.]+s(?=\.[^.]+$)/i, "").replace(/\.[^.]+$/, "");
@@ -762,6 +763,7 @@ function deleteForward(i) {
 /* The ☰ menu on each bag row. Add an entry here to add an action. */
 const ROW_MENU = [
   { label: "In the hole (this frame)", show: b => b.st !== 3, run: i => declareHole(i) },
+  { label: "Off the board (this frame)", show: b => b.st !== 4, run: i => declareOff(i) },
   { label: "Delete from here on", show: () => true, run: i => deleteForward(i) },
   { label: "Delete this frame only", show: () => true, run: i => { state.sel = i; deleteSel(true); } },
 ];
@@ -782,23 +784,24 @@ function openRowMenu(i, anchor) {
   m.style.top = Math.max(8, Math.min(window.innerHeight - mh - 8, r.bottom + 4)) + "px";
 }
 document.addEventListener("pointerdown", e => { const m = document.getElementById("rowMenu"); if (m && !m.contains(e.target) && !(e.target.closest && e.target.closest("button.menubtn"))) closeRowMenu(); }, true);
-function declareHole(i) {
+function declareOut(i, st) {                              // st 3 = went in the hole, 4 = went off the board; both are one-frame markers
   const L = curL(), b = L.boxes[i];
   if (!b || !isBag(b)) return toast("Pick a bag's box first.");
   pendingDel = null; edit = null;
-  const copy = { ...b };
-  mutate(L2 => { const x = L2.boxes[i]; x.st = 3; x.ev = 1; });
+  const copy = { ...b }, what = st === 3 ? "went in the hole" : "went off the board", done = st === 3 ? "is in the hole" : "is off the board";
+  mutate(L2 => { const x = L2.boxes[i]; x.st = st; x.ev = 1; });
   const n = releaseForward(state.cur, copy);
-  toast(boxTag({ ...copy, st: 0 }) + " went in the hole on this frame." + (n ? " Removed its old resting box from " + n + " later frame" + (n === 1 ? "" : "s") + "." : "") + (copy.p ? "" : " Tip: tag the bag (P and number) so it can be followed."));
-  // the bag being drawn is now in the hole, so its sequence is done: line up the next bag (same rule as R and X)
+  toast(boxTag({ ...copy, st: 0 }) + " " + what + " on this frame." + (n ? " Removed its old resting box from " + n + " later frame" + (n === 1 ? "" : "s") + "." : "") + (copy.p ? "" : " Tip: tag the bag (P and number) so it can be followed."));
+  // the bag being drawn is finished, so line up the next bag (same rule as R and X)
   const t = bagNow();
   if (state.advOnRest && copy.p === t.p && copy.n === t.n && state.throwIdx < 7) {
     setThrow(state.throwIdx + 1);
     const nx = bagNow();
-    toast("P" + t.p + " B" + t.n + " is in the hole. Now drawing Player " + nx.p + " · Bag " + nx.n + ".");
+    toast("P" + t.p + " B" + t.n + " " + done + ". Now drawing Player " + nx.p + " · Bag " + nx.n + ".");
   }
   updateAll(); requestDraw();
 }
+const declareHole = i => declareOut(i, 3), declareOff = i => declareOut(i, 4);
 function setClass(i) {
   state.curClass = i;
   if (state.sel >= 0 && curL().boxes[state.sel] && curL().boxes[state.sel].c !== i) mutate(L => { L.boxes[state.sel].c = i; });
@@ -857,7 +860,7 @@ function toggleState(v) {
   const L = curL(), b = L && L.boxes[state.sel];
   if (!b) return toast("Click a bag's box first.");
   if (!isBag(b)) return toast("Resting, moved and in-hole are for bags, not boards.");
-  mutate(L2 => { const x = L2.boxes[state.sel]; if (x.st === v) delete x.st; else x.st = v; });
+  mutate(L2 => { const x = L2.boxes[state.sel]; if (x.st === v) delete x.st; else x.st = v; if (x.st !== 3) delete x.ev; });
   // the bag being drawn has stopped or gone in the hole: its sequence is done, so line up the next bag
   const b2 = curL().boxes[state.sel], t = bagNow();
   if (state.advOnRest && b2 && (b2.st === 1 || b2.st === 3) && b2.p === t.p && b2.n === t.n && state.throwIdx < 7) {
@@ -897,13 +900,13 @@ $("advOnRest").onchange = e => { state.advOnRest = e.target.checked; scheduleSav
 
 function bagStats() {
   const im = curImg(); if (!im) return null;
-  const g = grpName(im.name), seen = new Set(), hole = new Set();
+  const g = grpName(im.name), seen = new Set(), hole = new Set(), off = new Set();
   for (let k = 0; k <= state.cur; k++) {
     const m = state.imgs[k]; if (grpName(m.name) !== g) continue;
     const L = state.labels.get(m.name); if (!L) continue;
-    for (const b of L.boxes) if (isBag(b) && b.p && b.n) { const id = b.p + "-" + b.n; seen.add(id); if (b.st === 3) hole.add(id); }
+    for (const b of L.boxes) if (isBag(b) && b.p && b.n) { const id = b.p + "-" + b.n; seen.add(id); if (b.st === 3) hole.add(id); if (b.st === 4) off.add(id); }
   }
-  return { thrown: seen.size, hole: hole.size, board: seen.size - hole.size };
+  return { thrown: seen.size, hole: hole.size, off: off.size, board: seen.size - hole.size - off.size };
 }
 
 /* ====================== side panels ====================== */
@@ -1003,7 +1006,7 @@ function updateAll() {
   $("applyBag").disabled = !bagSel;
   $("autoCarry").checked = state.autoCarry; $("advOnRest").checked = state.advOnRest;
   const bs = bagStats();
-  $("bagCount").textContent = bs && bs.thrown ? "Bags so far in this video: " + bs.thrown + " of 8 thrown · " + bs.hole + " in the hole · " + bs.board + " on the board" : "Bag count appears once boxes have a player and bag number.";
+  $("bagCount").textContent = bs && bs.thrown ? "Bags so far in this video: " + bs.thrown + " of 8 thrown · " + bs.hole + " in the hole · " + (bs.off ? bs.off + " off the board · " : "") + bs.board + " on the board" : "Bag count appears once boxes have a player and bag number.";
 }
 function setButtons() {
   ["openBtn", "loadLabelsBtn", "saveLabelsBtn", "exportBtn", "clearBtn"].forEach(id => { $(id).disabled = busy; });
@@ -1115,13 +1118,14 @@ function draw() {
     if (i === state.sel) { ctx.fillStyle = col + "33"; ctx.fillRect(b.x, b.y, b.w, b.h); }
     ctx.lineWidth = 4 / s; ctx.strokeStyle = "rgba(0,0,0,.65)"; ctx.strokeRect(b.x, b.y, b.w, b.h);
     ctx.lineWidth = (i === state.sel || sc ? 3 : 2) / s; ctx.strokeStyle = col;
-    if (isBag(b) && b.st === 3) ctx.setLineDash([8 / s, 5 / s]);
+    if (isBag(b) && (b.st === 3 || b.st === 4)) ctx.setLineDash([8 / s, 5 / s]);
     ctx.strokeRect(b.x, b.y, b.w, b.h); ctx.setLineDash([]);
-    if (sc && b.st !== 3) {            // resting (red) / moved (green): a second border inside, so the bag's own colour still shows
+    if (sc && b.st !== 3 && b.st !== 4) {            // resting (red) / moved (green): a second border inside, so the bag's own colour still shows
       const ins = 4 / s;
       if (b.w > ins * 3 && b.h > ins * 3) { ctx.lineWidth = 2.5 / s; ctx.strokeStyle = sc; ctx.strokeRect(b.x + ins, b.y + ins, b.w - ins * 2, b.h - ins * 2); }
     }
     if (isBag(b) && b.st === 3) { ctx.lineWidth = 2 / s; ctx.strokeStyle = HOLE_COLOR; ctx.beginPath(); ctx.moveTo(b.x, b.y); ctx.lineTo(b.x + b.w, b.y + b.h); ctx.moveTo(b.x + b.w, b.y); ctx.lineTo(b.x, b.y + b.h); ctx.stroke(); }
+    if (isBag(b) && b.st === 4) { ctx.lineWidth = 2 / s; ctx.strokeStyle = OFF_COLOR; ctx.beginPath(); ctx.moveTo(b.x, b.y + b.h); ctx.lineTo(b.x + b.w, b.y); ctx.stroke(); }
   }
   const hb = bs[hoverBox];
   if (hb) {                              // pulse the box whose list row the pointer is over
@@ -1361,7 +1365,7 @@ async function importLabels(file) {
   let n = 0, pending = 0;
   for (const [name, v] of Object.entries(o.images)) {
     const boxes = (v.boxes || []).filter(b => map[b.c] !== undefined && [b.x, b.y, b.w, b.h].every(Number.isFinite) && b.w > 0 && b.h > 0)
-      .map(b => { const o = { c: map[b.c], x: +b.x, y: +b.y, w: +b.w, h: +b.h }; if (b.p >= 1 && b.p <= 2 && b.n >= 1 && b.n <= 4) { o.p = +b.p; o.n = +b.n; } const st = b.st || (b.r ? 1 : 0); if (st >= 1 && st <= 3) o.st = st; if (b.ev && o.st === 3) o.ev = 1; return o; });
+      .map(b => { const o = { c: map[b.c], x: +b.x, y: +b.y, w: +b.w, h: +b.h }; if (b.p >= 1 && b.p <= 2 && b.n >= 1 && b.n <= 4) { o.p = +b.p; o.n = +b.n; } const st = b.st || (b.r ? 1 : 0); if (st >= 1 && st <= 4) o.st = st; if (b.ev && (o.st === 3 || o.st === 4)) o.ev = 1; return o; });
     state.labels.set(name, { boxes, done: !!v.done && !boxes.length });
     n++; if (!have.has(name)) pending++;
   }
