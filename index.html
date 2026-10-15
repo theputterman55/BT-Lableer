@@ -251,7 +251,7 @@
     <tr><td>Z</td><td>Hold view: keep zoom and position on the next image</td></tr>
     <tr><td>L</td><td>Show or hide box labels</td></tr>
     <tr><td>Esc</td><td>Deselect (or cancel an edit)</td></tr>
-    <tr><td>&#9998; (in the list)</td><td>Edit a box: drag it to move, drag a handle to resize, then Save (or Enter). Arrows nudge 0.5 px, Shift 5 px.</td></tr>
+    <tr><td>&#9998; (in the list)</td><td>Edit a box: drag it to move, drag a handle to resize, then Save (or Enter). Going to another box or frame saves it too; Esc cancels. Arrows nudge 0.5 px, Shift 5 px.</td></tr>
   </table>
   <div class="row"><button id="helpClose" class="primary" type="button">Got it</button></div>
 </dialog>
@@ -265,7 +265,7 @@
 /* ====================== constants and state ====================== */
 const $ = id => document.getElementById(id);
 const PALETTE = ["#f5a524", "#c792ea", "#5aa9ff", "#ff6b6b", "#3ecf8e", "#ffd866", "#4dd0e1", "#ff8a65", "#a5d6a7"];
-const APP_VERSION = "6.1.3";
+const APP_VERSION = "6.2";
 // Player 1 = blue shades, Player 2 = orange shades; bag 1 darkest, bag 4 lightest.
 const BAG_SHADES = { 1: ["#1d4ed8", "#3b82f6", "#7cb8ff", "#c3dcff"], 2: ["#b84a00", "#f07a00", "#ffa940", "#ffd199"] };
 const UNTAGGED = "#c9d1d9";                              // a bag with no player/number yet
@@ -546,11 +546,11 @@ let edit = null;                         // { box, before, ulen } while one box 
 const editing = () => !!(edit && curImg() && curL().boxes[state.sel] === edit.box);
 function startEdit(i) {
   if (!curImg()) return;
-  if (edit) cancelEdit(true);
+  if (edit) saveEdit(true);
   const b = curL().boxes[i]; if (!b) return;
   state.sel = i; edit = { box: b, orig: { ...b }, before: rawL(), ulen: H(curImg().name).u.length };
   updateAll(); updateCursor(); requestDraw();
-  toast("Editing. Drag the box to move it, drag a handle to resize, then press Save (or Enter). Esc cancels.");
+  toast("Editing. Drag to move, drag a handle to resize, then Save (or Enter). Moving on saves it too. Esc cancels.");
 }
 /* After a save: the bag's resting spot is updated on the following frames of this video, so the old spot disappears.
    It follows the run of resting copies of this bag (same player and number) that start right after this frame and
@@ -583,11 +583,11 @@ function sweepOldSpot(old, nu) {
   }
   return n;
 }
-function saveEdit() {
+function saveEdit(auto) {
   if (!editing()) { edit = null; return; }
   const b = edit.box, was = edit.before, old = edit.orig;
   edit = null;
-  let msg = "Saved to this frame.";
+  let msg = auto ? "Saved your edit." : "Saved to this frame.";
   if (isBag(b) && b.st === 2) { pushUndoRaw(rawL()); b.st = 1; msg = "Saved. Bag is resting again (red) at its new spot."; }
   if (iou(old, b) < 0.98) {
     const n = sweepOldSpot(old, { x: b.x, y: b.y, w: b.w, h: b.h });
@@ -607,7 +607,7 @@ function cancelEdit(quiet) {
 }
 async function goTo(i) {
   if (!state.imgs.length) return;
-  if (edit) cancelEdit(true);
+  if (edit) saveEdit(true);
   i = clamp(i, 0, state.imgs.length - 1);
   const old = curImg();
   const im = state.imgs[i], tok = ++loadTok;
@@ -691,14 +691,21 @@ function copyPrev() {
   if (!curImg() || state.cur === 0) return toast("There is no previous image.");
   const src = state.labels.get(state.imgs[state.cur - 1].name);
   if (!src || !src.boxes.length) return toast("The previous image has no boxes.");
-  const L = curL(), W = bmp.width, Hh = bmp.height, add = [];
+  const L = curL(), W = bmp.width, Hh = bmp.height, add = [], upd = [];
   for (const b of src.boxes) {
     const nb = cloneBox(b, W, Hh);
-    if (!L.boxes.some(o => o.c === nb.c && iou(o, nb) > 0.9)) add.push(nb);
+    if (L.boxes.some(o => o.c === nb.c && iou(o, nb) > 0.9)) continue;
+    // the same resting bag already sits here at an older spot: the copy replaces it instead of doubling it
+    let k = -1;
+    if (isBag(nb) && nb.st === 1) {
+      if (nb.p) k = L.boxes.findIndex(o => isBag(o) && o.p === nb.p && o.n === nb.n && o.st === 1);
+      else { let best = 0.3; L.boxes.forEach((o, j) => { if (isBag(o) && !o.p && o.st === 1) { const v = iou(o, nb); if (v > best) { best = v; k = j; } } }); }
+    }
+    if (k >= 0) upd.push([k, nb]); else add.push(nb);
   }
-  if (!add.length) return toast("Those boxes are already here.");
-  mutate(L2 => { L2.boxes.push(...add); L2.done = false; });
-  toast("Copied " + add.length + " box" + (add.length === 1 ? "" : "es") + ". Adjust any that moved.");
+  if (!add.length && !upd.length) return toast("Those boxes are already here.");
+  mutate(L2 => { upd.forEach(([k, nb]) => { Object.assign(L2.boxes[k], { x: nb.x, y: nb.y, w: nb.w, h: nb.h }); }); L2.boxes.push(...add); L2.done = false; });
+  toast("Copied " + add.length + " new box" + (add.length === 1 ? "" : "es") + (upd.length ? " and moved " + upd.length + " resting bag" + (upd.length === 1 ? "" : "s") + " to their latest spot" : "") + ". Adjust any that moved.");
 }
 function markEmpty() {
   const L = curL();
