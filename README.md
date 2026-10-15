@@ -41,7 +41,7 @@ Zoom with the wheel, pinch, `+` / `-`, or the buttons. `0` fits the picture. At 
 
 ## Board border and hole ring
 
-- **Board border.** In the side panel under *Board and hole*, press **Build board border** and tap the four corners: front-left, front-right, back-right, back-left. Drag a dot to adjust it. When all four are set, **Save board** lights up (Enter works too). Esc cancels and Backspace removes the last dot.
+- **Board border.** In the side panel under *Board and hole*, press **Build board border** and tap the four corners: top-left, bottom-left, bottom-right, top-right (saved in that order whichever way you tap). Drag a dot to adjust it. When all four are set, **Save board** lights up (Enter works too). Esc cancels and Backspace removes the last dot.
 - **It carries.** The border and the hole ring carry to the frames you step onto, even when no bag is resting. If the board bounces, drag a corner on that frame: later frames that still had the old shape follow, and it stops at a frame that has its own different shape.
 - **Hole ring.** **Draw hole ring** switches to the hole class so you can drag a box around the hole once per video.
 - **Export.** Your four corners are kept in the labels file. The YOLO export uses the box around the shape for the `board` class.
@@ -77,3 +77,5 @@ Labeling works on a phone, but a desktop or tablet is much easier for small bags
 - `index.html` is the whole app (loading, drawing, zoom, export).
 - `sw.js` is the offline cache.
 - `manifest.webmanifest`, `icon-192.png`, `icon-512.png` are for installing it.
+
+- **Turning the hole ring.** Select the ring and drag the round pin that hangs below it to turn it to match the hole. The box saved for YOLO is the rectangle around the turned ring, and the angle is kept in the labels file (`rot`, radians).

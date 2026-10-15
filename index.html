@@ -264,7 +264,7 @@
     <tr><td>R</td><td>Selected bag has stopped: resting (red). Press again to clear</td></tr>
     <tr><td>M</td><td>A resting bag got bumped: moved (green)</td></tr>
     <tr><td>&#9776; (bag row)</td><td>More actions for that bag: In the hole (this frame), Delete from here on (this frame and every later frame of the video), Delete this frame only.</td></tr>
-    <tr><td>Board border</td><td>Press <b>Build board border</b> (side panel), then tap the four corners: front-left, front-right, back-right, back-left. Drag any dot to adjust. When all four are set, <b>Save board</b> lights up (or press Enter). Esc cancels, Backspace removes the last dot. It carries to the next frames; drag a corner on a frame where the board moved and it follows from there.</td></tr>
+    <tr><td>Board border</td><td>Press <b>Build board border</b> (side panel), then tap the four corners: top-left, bottom-left, bottom-right, top-right (in that order; the app puts them in order for you anyway). Drag any dot to adjust. When all four are set, <b>Save board</b> lights up (or press Enter). Esc cancels, Backspace removes the last dot. It carries to the next frames; drag a corner on a frame where the board moved and it follows from there.</td></tr>
     <tr><td>Draw hole ring</td><td>Side-panel button: switches to the hole class so you can drag a box around the hole once per video. It carries like the board.</td></tr>
     <tr><td>&#9776; &rarr; Off the board</td><td>The bag left the board or the picture. Marks that frame with a one-frame purple marker (like the hole one, not training data) and removes the bag's old resting boxes from later frames. Keep the bag as moved while any of it is visible.</td></tr>
     <tr><td>X</td><td>Selected bag went in the hole. On an old resting bag this declares it on this frame and releases it from the later frames.</td></tr>
@@ -289,7 +289,7 @@
 /* ====================== constants and state ====================== */
 const $ = id => document.getElementById(id);
 const PALETTE = ["#f5a524", "#c792ea", "#5aa9ff", "#ff6b6b", "#3ecf8e", "#ffd866", "#4dd0e1", "#ff8a65", "#a5d6a7"];
-const APP_VERSION = "7.7";
+const APP_VERSION = "7.8";
 // Player 1 = blue shades, Player 2 = orange shades; bag 1 darkest, bag 4 lightest.
 const BAG_SHADES = { 1: ["#1d4ed8", "#3b82f6", "#7cb8ff", "#c3dcff"], 2: ["#b84a00", "#f07a00", "#ffa940", "#ffd199"] };
 const UNTAGGED = "#c9d1d9";                              // a bag with no player/number yet
@@ -337,9 +337,20 @@ const segCross = (a, b, c, d) => {
 };
 const polyArea = pts => Math.abs(pts.reduce((t, a, i) => { const b = pts[(i + 1) % pts.length]; return t + a.x * b.y - b.x * a.y; }, 0)) / 2;
 const cornersOf = o => o.q ? quadPts(o) : [{ x: o.x, y: o.y }, { x: o.x + o.w, y: o.y }, { x: o.x + o.w, y: o.y + o.h }, { x: o.x, y: o.y + o.h }];
-const staticSnap = b => ({ c: b.c, x: b.x, y: b.y, w: b.w, h: b.h, q: b.q ? b.q.map(a => [a[0], a[1]]) : null });
+const staticSnap = b => ({ c: b.c, x: b.x, y: b.y, w: b.w, h: b.h, rot: b.rot || 0, q: b.q ? b.q.map(a => [a[0], a[1]]) : null });
+/* The hole ring can be turned: x,y,w,h is the ring's own (unturned) box and rot is its angle in radians about the centre.
+   The YOLO box is the rectangle around the turned ring. */
+const rotPt = (b, lx, ly) => { const r = b.rot || 0, co = Math.cos(r), si = Math.sin(r); return { x: b.x + b.w / 2 + lx * co - ly * si, y: b.y + b.h / 2 + lx * si + ly * co }; };
+function ringAABB(b) {
+  const a = b.w / 2, c = b.h / 2, r = b.rot || 0, co = Math.cos(r), si = Math.sin(r), hw = Math.hypot(a * co, c * si), hh = Math.hypot(a * si, c * co);
+  return { x: b.x + a - hw, y: b.y + c - hh, w: 2 * hw, h: 2 * hh };
+}
+const exportBox = b => (isHole(b) && b.rot) ? ringAABB(b) : b;
+const PIN_PX = 34;                       // how far below the ring the turn pin hangs, in screen pixels
+const pinPt = b => rotPt(b, 0, b.h / 2 + PIN_PX / view.s);
 const closeStatic = (x, sn) => {
   if (x.c !== sn.c || !!x.q !== !!sn.q) return false;
+  if (Math.abs((x.rot || 0) - (sn.rot || 0)) > 0.02) return false;
   const A = cornersOf(x), B = cornersOf(sn);
   return A.every((p, i) => Math.hypot(p.x - B[i].x, p.y - B[i].y) < 3);
 };
@@ -745,6 +756,7 @@ function cloneBox(b, W, Hh) {
   if (b.p) { nb.p = b.p; nb.n = b.n; }
   if (b.st) nb.st = b.st;
   if (b.q) nb.q = b.q.map(a => [a[0], a[1]]);
+  if (b.rot) nb.rot = b.rot;
   return nb;
 }
 function addBox(b) {
@@ -842,13 +854,13 @@ function flushStatic() {
   return n;
 }
 /* Board border: tap four corners (front-left, front-right, back-right, back-left), drag a dot to adjust, then Save. */
-const BQ_NAMES = ["front-left", "front-right", "back-right", "back-left"];
+const BQ_NAMES = ["top-left", "bottom-left", "bottom-right", "top-right"];
 function startBoardBuild() {
   if (!curImg()) return toast("Open a video first.");
   if (edit) saveEdit(true);
   bq = { pts: [] }; state.sel = -1; pendingDel = null;
   updateAll(); updateCursor(); requestDraw();
-  toast("Tap the four corners of the board: front-left, front-right, back-right, back-left. Drag a dot to adjust it.");
+  toast("Tap the four corners of the board: top-left, bottom-left, bottom-right, top-right. Drag a dot to adjust it.");
 }
 function cancelBoardBuild(quiet) {
   if (!bq) return;
@@ -858,7 +870,8 @@ function cancelBoardBuild(quiet) {
 function saveBoardBuild() {
   if (!bq || !curImg()) return;
   if (bq.pts.length < 4) return toast("Tap all four corners first.", "bad");
-  const pts = bq.pts.map(q => ({ x: q.x, y: q.y }));
+  let pts = bq.pts.map(q => ({ x: q.x, y: q.y }));
+  { const byY = pts.slice().sort((a, b) => a.y - b.y), top = byY.slice(0, 2).sort((a, b) => a.x - b.x), bot = byY.slice(2).sort((a, b) => a.x - b.x); pts = [top[0], bot[0], bot[1], top[1]]; }   // always saved as top-left, bottom-left, bottom-right, top-right
   if (segCross(pts[0], pts[1], pts[2], pts[3]) || segCross(pts[1], pts[2], pts[3], pts[0])) return toast("The corners cross over. Tap them in order around the board.", "bad");
   if (polyArea(pts) < 400) return toast("Those four corners are too close together.", "bad");
   const ci = classIdx("board"), L0 = curL();
@@ -1198,8 +1211,10 @@ function requestDraw() { if (drawQueued) return; drawQueued = true; requestAnima
 
 const HANDLES = ["nw", "ne", "se", "sw", "n", "e", "s", "w"];
 function handlePts(b) {
-  const x2 = b.x + b.w, y2 = b.y + b.h, mx = b.x + b.w / 2, my = b.y + b.h / 2;
-  return { nw: [b.x, b.y], ne: [x2, b.y], se: [x2, y2], sw: [b.x, y2], n: [mx, b.y], e: [x2, my], s: [mx, y2], w: [b.x, my] };
+  const a = b.w / 2, c = b.h / 2, o = {};
+  const L = { nw: [-a, -c], ne: [a, -c], se: [a, c], sw: [-a, c], n: [0, -c], e: [a, 0], s: [0, c], w: [-a, 0] };
+  for (const k in L) { const p = rotPt(b, L[k][0], L[k][1]); o[k] = [p.x, p.y]; }
+  return o;
 }
 function hitHandle(px, py, type) {
   const b = curL().boxes[state.sel];
@@ -1210,6 +1225,7 @@ function hitHandle(px, py, type) {
     quadPts(b).forEach((q, j) => { const d = Math.hypot(view.ox + q.x * view.s - px, view.oy + q.y * view.s - py); if (d <= r && d < bd) { bd = d; best = "q" + j; } });
     return best;
   }
+  if (isHole(b)) { const pp = pinPt(b); if (Math.hypot(view.ox + pp.x * view.s - px, view.oy + pp.y * view.s - py) <= r + 4) return "rot"; }
   const pts = handlePts(b);
   for (const h of HANDLES) {
     const sx = view.ox + pts[h][0] * view.s, sy = view.oy + pts[h][1] * view.s;
@@ -1239,7 +1255,7 @@ function draw() {
     const b = bs[i], col = boxColor(b), sc = stateColor(b);
     if (isHole(b)) {                                     // the hole ring: an ellipse inside its box, green on an in-the-hole frame
       const on = holeNow.length > 0, rc = on ? HOLE_ON : HOLE_RING;
-      ctx.beginPath(); ctx.ellipse(b.x + b.w / 2, b.y + b.h / 2, b.w / 2, b.h / 2, 0, 0, Math.PI * 2);
+      ctx.beginPath(); ctx.ellipse(b.x + b.w / 2, b.y + b.h / 2, b.w / 2, b.h / 2, b.rot || 0, 0, Math.PI * 2);
       if (on) { ctx.fillStyle = "rgba(62,207,142,.28)"; ctx.fill(); }
       if (i === state.sel) { ctx.fillStyle = rc + "33"; ctx.fill(); }
       ctx.lineWidth = (on ? 7 : 5) / s; ctx.strokeStyle = "rgba(0,0,0,.65)"; ctx.stroke();
@@ -1304,6 +1320,12 @@ function draw() {
       const sx = ox + pts[h][0] * s, sy = oy + pts[h][1] * s;
       ctx.fillStyle = "#fff"; ctx.strokeStyle = boxColor(sb); ctx.lineWidth = 2;
       ctx.fillRect(sx - 5, sy - 5, 10, 10); ctx.strokeRect(sx - 5, sy - 5, 10, 10);
+    }
+    if (isHole(sb)) {                                    // the turn pin: a short line hanging below the ring with a round grip
+      const a0 = pts.s, pp = pinPt(sb), ax = ox + a0[0] * s, ay = oy + a0[1] * s, px = ox + pp.x * s, py = oy + pp.y * s;
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(px, py); ctx.lineWidth = 4; ctx.strokeStyle = "rgba(0,0,0,.65)"; ctx.stroke(); ctx.lineWidth = 2; ctx.strokeStyle = boxColor(sb); ctx.stroke();
+      ctx.beginPath(); ctx.arc(px, py, 10, 0, Math.PI * 2); ctx.fillStyle = "#fff"; ctx.fill(); ctx.lineWidth = 2.5; ctx.strokeStyle = boxColor(sb); ctx.stroke();
+      ctx.beginPath(); ctx.arc(px, py, 4.5, -0.6, Math.PI * 1.45); ctx.lineWidth = 1.8; ctx.strokeStyle = "#111"; ctx.stroke();
     }
   }
   if (bq) {                                              // the border being built
@@ -1380,6 +1402,7 @@ stage.addEventListener("pointerdown", e => {
     return;
   }
   const hd = hitHandle(p.x, p.y, e.pointerType);
+  if (hd === "rot") { const b = curL().boxes[state.sel]; gesture = { kind: "rotate", start: staticSnap(b), before: rawL() }; return; }
   if (hd) {
     const b = curL().boxes[state.sel];
     gesture = { kind: "resize", h: hd, start: staticSnap(b), pts0: b.q ? quadPts(b) : null, before: rawL() };
@@ -1416,9 +1439,25 @@ stage.addEventListener("pointermove", e => {
   } else if (g.kind === "move") {
     const b = curL().boxes[state.sel];
     b.x = clamp(g.start.x + ip.x - g.sx, 0, bmp.width - b.w); b.y = clamp(g.start.y + ip.y - g.sy, 0, bmp.height - b.h);
+  } else if (g.kind === "rotate") {
+    const b = curL().boxes[state.sel];
+    let a = Math.atan2(ip.y - (b.y + b.h / 2), ip.x - (b.x + b.w / 2)) - Math.PI / 2;
+    a = ((a + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
+    if (Math.abs(a) < 0.03) a = 0;
+    if (a) b.rot = a; else delete b.rot;
   } else if (g.kind === "resize" && g.h[0] === "q") {
     const b = curL().boxes[state.sel];
     setQuad(b, g.pts0.map((q, j) => j === +g.h[1] ? { x: cp.x, y: cp.y } : q));
+  } else if (g.kind === "resize" && g.start.rot) {      // a turned ring: resize along its own axes
+    const b = curL().boxes[state.sel], s0 = g.start, co = Math.cos(s0.rot), si = Math.sin(s0.rot), cx0 = s0.x + s0.w / 2, cy0 = s0.y + s0.h / 2;
+    const dx = ip.x - cx0, dy = ip.y - cy0, qx = dx * co + dy * si, qy = -dx * si + dy * co;
+    let x1 = -s0.w / 2, x2 = s0.w / 2, y1 = -s0.h / 2, y2 = s0.h / 2;
+    if (g.h.includes("w")) x1 = qx;
+    if (g.h.includes("e")) x2 = qx;
+    if (g.h.includes("n")) y1 = qy;
+    if (g.h.includes("s")) y2 = qy;
+    const w = Math.max(Math.abs(x2 - x1), MIN_BOX), h = Math.max(Math.abs(y2 - y1), MIN_BOX), mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+    b.w = w; b.h = h; b.x = cx0 + mx * co - my * si - w / 2; b.y = cy0 + mx * si + my * co - h / 2;
   } else if (g.kind === "resize") {
     const b = curL().boxes[state.sel], s0 = g.start;
     let x1 = s0.x, y1 = s0.y, x2 = s0.x + s0.w, y2 = s0.y + s0.h;
@@ -1450,7 +1489,7 @@ function endPointer(e) {
       if (isHole(nb)) { const n = pushStaticForward(state.cur, null, nb); if (n) toast("Hole ring carried to " + n + " later frame" + (n === 1 ? "" : "s") + "."); }
     }
     else { state.sel = boxAt(g.ix, g.iy); updateAll(); requestDraw(); }
-  } else if (g.kind === "move" || g.kind === "resize") {
+  } else if (g.kind === "move" || g.kind === "resize" || g.kind === "rotate") {
     const b = curL().boxes[state.sel];
     if (b) {
       if (b.w < MIN_BOX) b.w = MIN_BOX; if (b.h < MIN_BOX) b.h = MIN_BOX;
@@ -1531,7 +1570,7 @@ function saveLabelsFile() {
   state.labels.forEach((L, name) => {
     if (!L.boxes.length && !L.done) return;
     const im = state.imgs.find(i => i.name === name);
-    images[name] = { w: im ? im.w : null, h: im ? im.h : null, done: L.done, boxes: L.boxes.map(b => { const o = { c: b.c, x: +b.x.toFixed(2), y: +b.y.toFixed(2), w: +b.w.toFixed(2), h: +b.h.toFixed(2) }; if (b.p) { o.p = b.p; o.n = b.n; } if (b.st) o.st = b.st; if (b.ev) o.ev = 1; if (b.q) o.q = b.q.map(a => [+a[0].toFixed(5), +a[1].toFixed(5)]); return o; }) };
+    images[name] = { w: im ? im.w : null, h: im ? im.h : null, done: L.done, boxes: L.boxes.map(b => { const o = { c: b.c, x: +b.x.toFixed(2), y: +b.y.toFixed(2), w: +b.w.toFixed(2), h: +b.h.toFixed(2) }; if (b.p) { o.p = b.p; o.n = b.n; } if (b.st) o.st = b.st; if (b.ev) o.ev = 1; if (b.q) o.q = b.q.map(a => [+a[0].toFixed(5), +a[1].toFixed(5)]); if (b.rot) o.rot = +b.rot.toFixed(4); return o; }) };
   });
   if (!Object.keys(images).length) return toast("No labels to save yet.");
   const d = new Date(), p2 = n => String(n).padStart(2, "0");
@@ -1548,7 +1587,7 @@ async function importLabels(file) {
   let n = 0, pending = 0;
   for (const [name, v] of Object.entries(o.images)) {
     const boxes = (v.boxes || []).filter(b => map[b.c] !== undefined && [b.x, b.y, b.w, b.h].every(Number.isFinite) && b.w > 0 && b.h > 0)
-      .map(b => { const o = { c: map[b.c], x: +b.x, y: +b.y, w: +b.w, h: +b.h }; if (b.p >= 1 && b.p <= 2 && b.n >= 1 && b.n <= 4) { o.p = +b.p; o.n = +b.n; } const st = b.st || (b.r ? 1 : 0); if (st >= 1 && st <= 4) o.st = st; if (b.ev && (o.st === 3 || o.st === 4)) o.ev = 1; if (Array.isArray(b.q) && b.q.length === 4 && b.q.every(a => Array.isArray(a) && a.length === 2 && a.every(Number.isFinite))) o.q = b.q.map(a => [+a[0], +a[1]]); return o; });
+      .map(b => { const o = { c: map[b.c], x: +b.x, y: +b.y, w: +b.w, h: +b.h }; if (b.p >= 1 && b.p <= 2 && b.n >= 1 && b.n <= 4) { o.p = +b.p; o.n = +b.n; } const st = b.st || (b.r ? 1 : 0); if (st >= 1 && st <= 4) o.st = st; if (b.ev && (o.st === 3 || o.st === 4)) o.ev = 1; if (Array.isArray(b.q) && b.q.length === 4 && b.q.every(a => Array.isArray(a) && a.length === 2 && a.every(Number.isFinite))) o.q = b.q.map(a => [+a[0], +a[1]]); if (Number.isFinite(+b.rot) && b.rot) o.rot = +b.rot; return o; });
     state.labels.set(name, { boxes, done: !!v.done && !boxes.length });
     n++; if (!have.has(name)) pending++;
   }
@@ -1618,10 +1657,11 @@ async function doExport() {
       used.add(safe.toLowerCase());
       const stem = safe.replace(/\.[^.]+$/, "");
       await zip.addBlob("images/" + split + "/" + safe, im.blob);
-      const lines = L.boxes.filter(b => !b.ev).map(b => {
+      const lines = L.boxes.filter(b => !b.ev).map(b0 => {
+        const b = exportBox(b0);
         const cx = clamp((b.x + b.w / 2) / im.w, 0, 1), cy = clamp((b.y + b.h / 2) / im.h, 0, 1);
         const w = clamp(b.w / im.w, 0, 1), h = clamp(b.h / im.h, 0, 1);
-        return b.c + " " + cx.toFixed(6) + " " + cy.toFixed(6) + " " + w.toFixed(6) + " " + h.toFixed(6);
+        return b0.c + " " + cx.toFixed(6) + " " + cy.toFixed(6) + " " + w.toFixed(6) + " " + h.toFixed(6);
       });
       zip.addText("labels/" + split + "/" + stem + ".txt", lines.length ? lines.join("\n") + "\n" : "");
       st.textContent = "Packing " + (i + 1) + " / " + items.length + "…";
