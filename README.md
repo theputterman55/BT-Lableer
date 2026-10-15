@@ -18,6 +18,7 @@ Made for the BagTrak bag detector. It pairs with BT Frame Extractor, which makes
 | --- | --- |
 | Draw (`B`) | Drag to make a box. Click a box to select it. Drag a handle to resize. |
 | Select (`V`) | Drag inside a box to move it. |
+| Pencil (&#9998; in the box list) | Edit one box: drag it to move, drag a handle to resize, then **Save** (or Enter). Esc or leaving the frame cancels. Saving a green (moved) bag makes it resting again. Arrows nudge 0.5 px (Shift 5 px). |
 | Pan (`H`) | Move the picture. Space + drag, right-drag, or two fingers also pan. |
 
 Zoom with the wheel, pinch, `+` / `-`, or the buttons. `0` fits the picture. At high zoom you can place edges to a fraction of a pixel, which matters for small bags far down the lane.
