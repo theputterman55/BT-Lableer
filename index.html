@@ -271,7 +271,7 @@
 /* ====================== constants and state ====================== */
 const $ = id => document.getElementById(id);
 const PALETTE = ["#f5a524", "#c792ea", "#5aa9ff", "#ff6b6b", "#3ecf8e", "#ffd866", "#4dd0e1", "#ff8a65", "#a5d6a7"];
-const APP_VERSION = "7.1";
+const APP_VERSION = "7.2";
 // Player 1 = blue shades, Player 2 = orange shades; bag 1 darkest, bag 4 lightest.
 const BAG_SHADES = { 1: ["#1d4ed8", "#3b82f6", "#7cb8ff", "#c3dcff"], 2: ["#b84a00", "#f07a00", "#ffa940", "#ffd199"] };
 const UNTAGGED = "#c9d1d9";                              // a bag with no player/number yet
@@ -940,7 +940,7 @@ function renderBoxes() {
     const sw = document.createElement("span"); sw.className = "sw"; sw.style.background = boxColor(b);
     const nm = document.createElement("span"); nm.className = "nm";
     nm.textContent = boxTag(b) + "  " + b.w.toFixed(1) + "×" + b.h.toFixed(1);
-    if (stateColor(b)) { nm.style.color = stateColor(b); row.style.borderColor = stateColor(b); row.style.borderWidth = "2px"; }
+    if (stateColor(b)) { nm.style.color = "#fff"; nm.style.fontWeight = "600"; row.style.borderColor = stateColor(b); row.style.borderWidth = "2px"; }
     const del = document.createElement("button"); del.className = "mini"; del.textContent = "✕"; del.setAttribute("aria-label", "Delete box");
     del.onclick = ev => { ev.stopPropagation(); edit = null; state.sel = i; deleteSel(); };
     if (pendingDel === b) {                                 // asked: did this bag go in the hole?
