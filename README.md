@@ -39,6 +39,14 @@ Zoom with the wheel, pinch, `+` / `-`, or the buttons. `0` fits the picture. At 
 | `L` | Show or hide box labels |
 | `?` | Help |
 
+## Board border and hole ring
+
+- **Board border.** In the side panel under *Board and hole*, press **Build board border** and tap the four corners: front-left, front-right, back-right, back-left. Drag a dot to adjust it. When all four are set, **Save board** lights up (Enter works too). Esc cancels and Backspace removes the last dot.
+- **It carries.** The border and the hole ring carry to the frames you step onto, even when no bag is resting. If the board bounces, drag a corner on that frame: later frames that still had the old shape follow, and it stops at a frame that has its own different shape.
+- **Hole ring.** **Draw hole ring** switches to the hole class so you can drag a box around the hole once per video.
+- **Export.** Your four corners are kept in the labels file. The YOLO export uses the box around the shape for the `board` class.
+- Their ☰ menu has *Delete from here on* and *Delete this frame only*.
+
 ## Bags in the hole
 
 - **Hole ring.** Press `3` and drag a box around the hole: it is drawn as a yellow ellipse and carries to the following frames like a board. Draw it once per video.
