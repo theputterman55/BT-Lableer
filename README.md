@@ -30,6 +30,7 @@ Zoom with the wheel, pinch, `+` / `-`, or the buttons. `0` fits the picture. At 
 | `1` to `9` | Pick a class (changes the selected box's class if one is selected) |
 | `A` / `D` or arrows | Previous / next image |
 | Arrows (box selected) | Nudge 1 px, `Shift` for 10 px |
+| (automatic) | Resting bags are pushed forward. When you leave a frame you changed, or press Save, its resting bags are brought to the following labeled frames: old copies move to the new spot, missing bags are added, doubled copies are removed. It stops at the first frame where the bag was moved (green), went in the hole, or has its own different spot, and at the first unlabeled frame. Walking through frames you did not change never touches them. |
 | `C` | Copy boxes from the previous image. A resting bag already on this frame at an older spot is moved to the copy's spot instead of doubled. |
 | `E` | Mark image as empty background and go to the next |
 | `U` | Next unlabeled image |

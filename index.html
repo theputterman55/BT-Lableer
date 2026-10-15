@@ -265,7 +265,7 @@
 /* ====================== constants and state ====================== */
 const $ = id => document.getElementById(id);
 const PALETTE = ["#f5a524", "#c792ea", "#5aa9ff", "#ff6b6b", "#3ecf8e", "#ffd866", "#4dd0e1", "#ff8a65", "#a5d6a7"];
-const APP_VERSION = "6.2";
+const APP_VERSION = "6.3";
 // Player 1 = blue shades, Player 2 = orange shades; bag 1 darkest, bag 4 lightest.
 const BAG_SHADES = { 1: ["#1d4ed8", "#3b82f6", "#7cb8ff", "#c3dcff"], 2: ["#b84a00", "#f07a00", "#ffa940", "#ffd199"] };
 const UNTAGGED = "#c9d1d9";                              // a bag with no player/number yet
@@ -552,47 +552,61 @@ function startEdit(i) {
   updateAll(); updateCursor(); requestDraw();
   toast("Editing. Drag to move, drag a handle to resize, then Save (or Enter). Moving on saves it too. Esc cancels.");
 }
-/* After a save: the bag's resting spot is updated on the following frames of this video, so the old spot disappears.
-   It follows the run of resting copies of this bag (same player and number) that start right after this frame and
-   sit in the same place as each other, wherever that place was. The run ends at the first frame where the bag was
-   moved (green), went in the hole, or was given a different resting spot of its own, so later work is never overwritten. */
-function sweepOldSpot(old, nu) {
-  const im = curImg(), g = grpName(im.name), tagged = !!old.p;
-  const same = x => isBag(x) && (x.p || 0) === (old.p || 0) && (x.n || 0) === (old.n || 0);
-  let n = 0, anchor = null;
-  for (let k = state.cur + 1; k < state.imgs.length; k++) {
-    const m = state.imgs[k]; if (grpName(m.name) !== g) break;
-    const L = state.labels.get(m.name); if (!L || !L.boxes.length) continue;
-    let hit = -1;
-    if (tagged) {
-      hit = L.boxes.findIndex(x => same(x) && x.st === 1);
-      if (hit < 0) { if (L.boxes.some(same)) break; else continue; }
-    } else {
-      let best = 0.3; const ref = anchor || old;
-      L.boxes.forEach((x, j) => { if (same(x) && x.st === 1) { const v = iou(x, ref); if (v > best) { best = v; hit = j; } } });
-      if (hit < 0) break;
+/* Resting bags are pushed forward. Whenever you leave a frame you changed (or press Save), every resting bag on it
+   is brought to the following frames of the same video that are already labeled:
+   - a copy of the bag sitting at an older spot moves to this spot (the old spot disappears);
+   - a frame that does not have the bag yet gets it;
+   - doubled copies of the same player-and-number bag are removed.
+   It follows the run of look-alike resting copies and stops at the first frame where the bag was moved (green),
+   went in the hole, or has its own different resting spot, and at the first frame that is not labeled yet
+   (stepping onto that one carries the bags over anyway). Returns how many frames changed. */
+let visitDirty = false;
+function syncForward(si) {
+  const src = state.imgs[si], SL = src && state.labels.get(src.name);
+  if (!SL) return 0;
+  const g = grpName(src.name), touched = new Set();
+  const touch = (m, L) => { if (touched.has(m.name)) return; touched.add(m.name); const h = H(m.name); h.u.push(JSON.stringify({ boxes: L.boxes, done: L.done })); if (h.u.length > 80) h.u.shift(); h.r.length = 0; };
+  for (const r of SL.boxes.filter(x => isBag(x) && x.st === 1)) {
+    const tagged = !!r.p, same = x => isBag(x) && (x.p || 0) === (r.p || 0) && (x.n || 0) === (r.n || 0);
+    let anchor = null;
+    for (let k = si + 1; k < state.imgs.length; k++) {
+      const m = state.imgs[k]; if (grpName(m.name) !== g) break;
+      const L = state.labels.get(m.name); if (!L || !L.boxes.length) break;
+      let hit = -1;
+      if (tagged) {
+        hit = L.boxes.findIndex(x => same(x) && x.st === 1);
+        if (hit < 0 && L.boxes.some(same)) break;           // here the bag was moved or went in the hole
+      } else {
+        let best = 0.3; const ref = anchor || r;
+        L.boxes.forEach((x, j) => { if (same(x) && !x.p && x.st === 1) { const v = iou(x, ref); if (v > best) { best = v; hit = j; } } });
+        if (hit < 0) break;
+      }
+      if (hit < 0) {                                          // the bag is not on this frame yet: add it
+        touch(m, L); L.boxes.push(cloneBox(r, m.w || bmp.width, m.h || bmp.height)); refreshFi(m); continue;
+      }
+      const cur = L.boxes[hit];
+      if (anchor && iou(cur, anchor) < 0.9) break;            // it has its own resting spot here: stop
+      if (!anchor) anchor = { x: cur.x, y: cur.y, w: cur.w, h: cur.h };
+      const extra = tagged ? L.boxes.map((x, j) => (j !== hit && same(x) && x.st === 1) ? j : -1).filter(j => j >= 0) : [];
+      const moveIt = iou(cur, r) <= 0.98;
+      if (moveIt || extra.length) {
+        touch(m, L);
+        if (moveIt) { cur.x = r.x; cur.y = r.y; cur.w = r.w; cur.h = r.h; }
+        if (extra.length) L.boxes = L.boxes.filter((x, j) => !extra.includes(j));
+        refreshFi(m);
+      }
     }
-    const cur = L.boxes[hit];
-    if (anchor && iou(cur, anchor) < 0.9) break;           // it has its own resting spot here: stop
-    if (!anchor) anchor = { x: cur.x, y: cur.y, w: cur.w, h: cur.h };
-    const h = H(m.name); h.u.push(JSON.stringify({ boxes: L.boxes, done: L.done })); if (h.u.length > 80) h.u.shift(); h.r.length = 0;
-    const dup = L.boxes.findIndex((x, j) => j !== hit && same(x) && iou(x, nu) > 0.5);
-    if (dup >= 0) L.boxes.splice(hit, 1);
-    else { cur.x = nu.x; cur.y = nu.y; cur.w = nu.w; cur.h = nu.h; cur.st = 1; }
-    refreshFi(m); n++;
   }
-  return n;
+  return touched.size;
 }
 function saveEdit(auto) {
   if (!editing()) { edit = null; return; }
-  const b = edit.box, was = edit.before, old = edit.orig;
+  const b = edit.box, was = edit.before;
   edit = null;
   let msg = auto ? "Saved your edit." : "Saved to this frame.";
   if (isBag(b) && b.st === 2) { pushUndoRaw(rawL()); b.st = 1; msg = "Saved. Bag is resting again (red) at its new spot."; }
-  if (iou(old, b) < 0.98) {
-    const n = sweepOldSpot(old, { x: b.x, y: b.y, w: b.w, h: b.h });
-    if (n) msg += " Old spot removed from " + n + " later frame" + (n === 1 ? "" : "s") + ".";
-  }
+  const n = syncForward(state.cur);
+  if (n) msg += " Updated " + n + " later frame" + (n === 1 ? "" : "s") + ".";
   toast(msg);
   if (rawL() === was) { updateAll(); updateCursor(); requestDraw(); scheduleSave(); return; }
   changed(); updateCursor();
@@ -608,6 +622,8 @@ function cancelEdit(quiet) {
 async function goTo(i) {
   if (!state.imgs.length) return;
   if (edit) saveEdit(true);
+  if (visitDirty && state.cur >= 0 && state.imgs[state.cur]) { const n = syncForward(state.cur); if (n) toast("Resting bags updated on " + n + " later frame" + (n === 1 ? "" : "s") + "."); }
+  visitDirty = false;
   i = clamp(i, 0, state.imgs.length - 1);
   const old = curImg();
   const im = state.imgs[i], tok = ++loadTok;
@@ -647,7 +663,7 @@ function pushUndoRaw(raw) { const h = H(curImg().name); h.u.push(raw); if (h.u.l
 function applyRaw(raw) { const o = JSON.parse(raw), L = curL(); L.boxes = o.boxes; L.done = o.done; state.sel = -1; edit = null; changed(); }
 function undo() { const im = curImg(); if (!im) return; const h = H(im.name); if (!h.u.length) return; h.r.push(rawL()); applyRaw(h.u.pop()); }
 function redo() { const im = curImg(); if (!im) return; const h = H(im.name); if (!h.r.length) return; h.u.push(rawL()); applyRaw(h.r.pop()); }
-function changed() { refreshFi(curImg()); updateAll(); scheduleSave(); requestDraw(); }
+function changed() { visitDirty = true; refreshFi(curImg()); updateAll(); scheduleSave(); requestDraw(); }
 function mutate(fn) { if (!curImg()) return; pushUndoRaw(rawL()); fn(curL()); changed(); }
 
 function carrySource() {
