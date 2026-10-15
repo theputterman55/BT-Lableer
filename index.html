@@ -265,7 +265,7 @@
 /* ====================== constants and state ====================== */
 const $ = id => document.getElementById(id);
 const PALETTE = ["#f5a524", "#c792ea", "#5aa9ff", "#ff6b6b", "#3ecf8e", "#ffd866", "#4dd0e1", "#ff8a65", "#a5d6a7"];
-const APP_VERSION = "6.1.1";
+const APP_VERSION = "6.1.2";
 // Player 1 = blue shades, Player 2 = orange shades; bag 1 darkest, bag 4 lightest.
 const BAG_SHADES = { 1: ["#1d4ed8", "#3b82f6", "#7cb8ff", "#c3dcff"], 2: ["#b84a00", "#f07a00", "#ffa940", "#ffd199"] };
 const UNTAGGED = "#c9d1d9";                              // a bag with no player/number yet
@@ -548,17 +548,42 @@ function startEdit(i) {
   if (!curImg()) return;
   if (edit) cancelEdit(true);
   const b = curL().boxes[i]; if (!b) return;
-  state.sel = i; edit = { box: b, before: rawL(), ulen: H(curImg().name).u.length };
+  state.sel = i; edit = { box: b, orig: { ...b }, before: rawL(), ulen: H(curImg().name).u.length };
   updateAll(); updateCursor(); requestDraw();
   toast("Editing. Drag the box to move it, drag a handle to resize, then press Save (or Enter). Esc cancels.");
 }
+/* After a save: the bag's OLD spot is removed from the following frames of this video and the new spot takes over.
+   A later frame is changed only if it holds this bag (same player and number) still resting at the old spot;
+   the first frame where the bag has already moved on (or went in the hole) stops the sweep. */
+function sweepOldSpot(old, nu) {
+  const im = curImg(), g = grpName(im.name), tagged = !!old.p;
+  let n = 0;
+  for (let k = state.cur + 1; k < state.imgs.length; k++) {
+    const m = state.imgs[k]; if (grpName(m.name) !== g) break;
+    const L = state.labels.get(m.name); if (!L || !L.boxes.length) continue;
+    const same = x => x.c === old.c && (x.p || 0) === (old.p || 0) && (x.n || 0) === (old.n || 0);
+    const hit = L.boxes.findIndex(x => same(x) && x.st === 1 && iou(x, old) > 0.5);
+    if (hit < 0) { if (tagged ? L.boxes.some(same) : true) break; else continue; }
+    const h = H(m.name); h.u.push(JSON.stringify({ boxes: L.boxes, done: L.done })); if (h.u.length > 80) h.u.shift(); h.r.length = 0;
+    const dup = L.boxes.findIndex((x, j) => j !== hit && same(x) && iou(x, nu) > 0.5);
+    if (dup >= 0) L.boxes.splice(hit, 1);
+    else { const x = L.boxes[hit]; x.x = nu.x; x.y = nu.y; x.w = nu.w; x.h = nu.h; x.st = 1; }
+    refreshFi(m); n++;
+  }
+  return n;
+}
 function saveEdit() {
   if (!editing()) { edit = null; return; }
-  const b = edit.box, was = edit.before;
+  const b = edit.box, was = edit.before, old = edit.orig;
   edit = null;
-  if (isBag(b) && b.st === 2) { pushUndoRaw(rawL()); b.st = 1; toast("Saved. Bag is resting again (red) at its new spot."); }
-  else toast("Saved to this frame.");
-  if (rawL() === was) { updateAll(); updateCursor(); requestDraw(); return; }
+  let msg = "Saved to this frame.";
+  if (isBag(b) && b.st === 2) { pushUndoRaw(rawL()); b.st = 1; msg = "Saved. Bag is resting again (red) at its new spot."; }
+  if (iou(old, b) < 0.98) {
+    const n = sweepOldSpot(old, { x: b.x, y: b.y, w: b.w, h: b.h });
+    if (n) msg += " Old spot removed from " + n + " later frame" + (n === 1 ? "" : "s") + ".";
+  }
+  toast(msg);
+  if (rawL() === was) { updateAll(); updateCursor(); requestDraw(); scheduleSave(); return; }
   changed(); updateCursor();
 }
 function cancelEdit(quiet) {
