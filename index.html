@@ -32,7 +32,13 @@
   .bx.editing { background: #14202c; }
   #secBoard button.wide { width: 100%; margin-top: 6px; }
   #bqActions[hidden] { display: none; }
+  #bqDelete[hidden] { display: none; }
+  #bqActions.three { grid-template-columns: 1fr 1fr 1fr; }
+  #bqActions button.del { color: #ff9b8f; border-color: #7a3a33; }
   #secBoard button.wide.on { background: #c0392b; border-color: #ff6b5b; color: #fff; }
+  #secBoard .row2 { display: flex; gap: 6px; margin-top: 6px; }
+  #secBoard .row2 button.wide { flex: 1; width: auto; margin-top: 0; }
+  #secBoard .row2 button.del { flex: 0 0 auto; margin-top: 0; color: #ff9b8f; border-color: #7a3a33; }
   #secBoard .hint { margin-top: 6px; font-size: 12px; line-height: 1.35; color: var(--muted); }
   #bqSave.ready { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); box-shadow: 0 0 0 3px rgba(245,165,36,.35); font-weight: 700; }
   .bx .nm { flex: 1; }
@@ -168,12 +174,19 @@
     </section>
     <section id="secBoard">
       <h3>Board, hole and rotation</h3>
-      <button id="bqBuild" class="wide" type="button" title="Tap the four corners of the board">Build board border</button>
+      <div class="row2">
+        <button id="bqBuild" class="wide" type="button" title="Tap the four corners of the board">Build board border</button>
+        <button id="bqDel" class="del" type="button" title="Delete the board border from this frame and the later frames that share it" aria-label="Delete board border">Delete</button>
+      </div>
       <div id="bqActions" class="grid2" style="margin-top:6px" hidden>
         <button id="bqSave" type="button" title="Save the border to this frame (Enter)">Save board</button>
-        <button id="bqCancel" type="button" title="Throw the border away (Esc)">Cancel</button>
+        <button id="bqCancel" type="button" title="Stop building and keep what was there (Esc)">Cancel</button>
+        <button id="bqDelete" type="button" class="del" title="Delete the board border from this frame and the later frames that share it" hidden>Delete border</button>
       </div>
-      <button id="holeBtn" class="wide" type="button" title="Switch to the hole class and drag a box around the hole">Draw hole ring</button>
+      <div class="row2">
+        <button id="holeBtn" class="wide" type="button" title="Switch to the hole class and drag a box around the hole">Draw hole ring</button>
+        <button id="holeDel" class="del" type="button" title="Delete the hole ring from this frame and the later frames that share it" aria-label="Delete hole ring">Delete</button>
+      </div>
       <button id="rotBtn" class="wide" type="button" title="Place a red dot on one corner of the flying bag, frame after frame">Start rotation dots</button>
       <label class="chk"><input type="checkbox" id="rotAdv" checked> Next frame after each dot</label>
       <div id="bhStatus" class="hint"></div>
@@ -269,6 +282,7 @@
     <tr><td>&#9776; (bag row)</td><td>More actions for that bag: In the hole (this frame), Delete from here on (this frame and every later frame of the video), Delete this frame only.</td></tr>
     <tr><td>Board border</td><td>Press <b>Build board border</b> (side panel), then tap the four corners: top-left, bottom-left, bottom-right, top-right (in that order; the app puts them in order for you anyway). Drag any dot to adjust. When all four are set, <b>Save board</b> lights up (or press Enter). Esc cancels, Backspace removes the last dot. It carries to the next frames; drag a corner on a frame where the board moved and it follows from there.</td></tr>
     <tr><td>Rotation dots</td><td>Side-panel button <b>Start rotation dots</b>: tap the same corner of the flying bag on each frame (it uses the bag under "Now drawing"). A faint ring shows where the dot was on the last frame. Delete removes this frame's dot, Esc or <b>Stop</b> ends it. Dots sit beside any boxes, so you can add them before or after drawing boxes. They are saved in the labels file and left out of the YOLO export.</td></tr>
+    <tr><td>Delete border or ring</td><td>The <b>Delete</b> button beside <b>Build board border</b> or <b>Draw hole ring</b> removes it from this frame and the later frames that still share it (it asks first). Earlier frames are not touched, so go to the first frame that has it to clear a whole video. While rebuilding a border, <b>Delete border</b> also appears beside Save board and Cancel.</td></tr>
     <tr><td>Draw hole ring</td><td>Side-panel button: switches to the hole class so you can drag a box around the hole once per video. It carries like the board.</td></tr>
     <tr><td>&#9776; &rarr; Off the board</td><td>The bag left the board or the picture. Marks that frame with a one-frame purple marker (like the hole one, not training data) and removes the bag's old resting boxes from later frames. Keep the bag as moved while any of it is visible.</td></tr>
     <tr><td>X</td><td>Selected bag went in the hole. On an old resting bag this declares it on this frame and releases it from the later frames.</td></tr>
@@ -293,7 +307,7 @@
 /* ====================== constants and state ====================== */
 const $ = id => document.getElementById(id);
 const PALETTE = ["#f5a524", "#c792ea", "#5aa9ff", "#ff6b6b", "#3ecf8e", "#ffd866", "#4dd0e1", "#ff8a65", "#a5d6a7"];
-const APP_VERSION = "7.9";
+const APP_VERSION = "7.10";
 // Player 1 = blue shades, Player 2 = orange shades; bag 1 darkest, bag 4 lightest.
 const BAG_SHADES = { 1: ["#1d4ed8", "#3b82f6", "#7cb8ff", "#c3dcff"], 2: ["#b84a00", "#f07a00", "#ffa940", "#ffd199"] };
 const UNTAGGED = "#c9d1d9";                              // a bag with no player/number yet
@@ -803,7 +817,7 @@ function releaseForward(si, b) {
 /* Every later copy of this bag in the following frames of the video (same player and number; untagged bags are followed by position). */
 function forwardHits(si, b) {
   const g = grpName(state.imgs[si].name), tagged = isBag(b) && !!b.p, hits = [];
-  const same = isBag(b) ? (x => isBag(x) && (x.p || 0) === (b.p || 0) && (x.n || 0) === (b.n || 0)) : (x => !isBag(x) && x.c === b.c);
+  const same = isBag(b) ? (x => isBag(x) && (x.p || 0) === (b.p || 0) && (x.n || 0) === (b.n || 0)) : (x => !isBag(x) && x.c === b.c && !!x.q === !!b.q);
   let ref = { x: b.x, y: b.y, w: b.w, h: b.h };
   for (let k = si + 1; k < state.imgs.length; k++) {
     const m = state.imgs[k]; if (grpName(m.name) !== g) break;
@@ -896,6 +910,16 @@ function drawHoleRing() {
   state.sel = -1; setClass(classIdx("hole")); setTool("draw");
   toast("Drag a box around the hole. It is drawn as a ring and carries to the next frames.");
 }
+/* Delete the board border or the hole ring from this frame and the later frames that share it (same as ☰ "Delete from here on"). */
+function deleteStaticOf(kind) {
+  const L = curL(); if (!L) return;
+  const i = L.boxes.findIndex(kind === "hole" ? isHole : x => isBoard(x) && x.q);
+  if (i < 0) return toast("There is no " + (kind === "hole" ? "hole ring" : "board border") + " on this frame.");
+  if (bq) cancelBoardBuild(true);
+  deleteForward(i);
+}
+$("bqDel").onclick = $("bqDelete").onclick = () => deleteStaticOf("board");
+$("holeDel").onclick = () => deleteStaticOf("hole");
 $("bqBuild").onclick = startBoardBuild; $("bqSave").onclick = saveBoardBuild; $("bqCancel").onclick = () => cancelBoardBuild(); $("holeBtn").onclick = drawHoleRing;
 
 /* Rotation dots: one red dot on the same corner of the flying bag, frame after frame. Each dot is a tiny one-frame marker kept in the
@@ -1180,6 +1204,8 @@ function updateAll() {
   if (rot && !state.imgs.length) rot = null;
   $("bqBuild").disabled = !has || !!bq; $("holeBtn").disabled = !has || !!bq;
   $("rotBtn").textContent = rot ? "Stop rotation dots" : "Start rotation dots"; $("rotBtn").classList.toggle("on", !!rot); $("rotBtn").disabled = !has || !!bq;
+  $("bqDel").disabled = !has || !bq0 || !!rot; $("holeDel").disabled = !has || !hole0 || !!rot;
+  $("bqDelete").hidden = !bq0; $("bqActions").classList.toggle("three", !!bq0);
   $("bqActions").hidden = !bq; $("bqSave").disabled = !bq || bq.pts.length < 4; $("bqSave").classList.toggle("ready", !!bq && bq.pts.length === 4);
   const tn = bagNow(), hasDot = has && rotDotOf(L, tn) >= 0;
   $("bhStatus").textContent = rot ? "Rotation dots for P" + tn.p + "B" + tn.n + ": tap the same corner of the bag. This frame: " + (hasDot ? "dot set" : "no dot yet") + ". Delete removes it, Esc stops." : bq ? (bq.pts.length < 4 ? "Tap the " + BQ_NAMES[bq.pts.length] + " corner (" + (bq.pts.length + 1) + " of 4)." : "All four set. Drag a dot to adjust, then press Save board.")

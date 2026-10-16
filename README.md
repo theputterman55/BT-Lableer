@@ -80,5 +80,8 @@ Labeling works on a phone, but a desktop or tablet is much easier for small bags
 
 - **Turning the hole ring.** Select the ring and drag the round pin that hangs below it to turn it to match the hole. The box saved for YOLO is the rectangle around the turned ring, and the angle is kept in the labels file (`rot`, radians).
 
+## Deleting the board border or hole ring
+Next to **Build board border** and **Draw hole ring** there is a **Delete** button. It removes the border (or ring) from this frame and from the later frames of the video that still hold the same one, and asks first when later frames are affected. It does not touch earlier frames, so to wipe it from a whole video go to the first frame that has it. While rebuilding a border, a **Delete border** button also shows beside Save board and Cancel. After deleting you can build or draw it again and it carries forward as before.
+
 ## Rotation dots
 Under *Board, hole and rotation*, press **Start rotation dots**, then tap the same corner of the flying bag on each frame. The dot belongs to the bag shown under *Now drawing* (change it there to track another bag). With *Next frame after each dot* on, the labeler steps forward after every dot and shows a faint ring where the dot was on the last frame. Delete removes this frame's dot, Esc or **Stop rotation dots** ends it and reports how many frames have dots. Dots are independent of boxes, so you can add them to frames that already have boxes (or box the frames later). They are saved in the labels file (`st` 5, `ev` 1, tiny box) and are never exported as training boxes; a frame that holds only dots is skipped by the YOLO export.
