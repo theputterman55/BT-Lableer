@@ -309,7 +309,7 @@
 /* ====================== constants and state ====================== */
 const $ = id => document.getElementById(id);
 const PALETTE = ["#f5a524", "#c792ea", "#5aa9ff", "#ff6b6b", "#3ecf8e", "#ffd866", "#4dd0e1", "#ff8a65", "#a5d6a7"];
-const APP_VERSION = "7.11";
+const APP_VERSION = "7.12";
 // Player 1 = blue shades, Player 2 = orange shades; bag 1 darkest, bag 4 lightest.
 const BAG_SHADES = { 1: ["#1d4ed8", "#3b82f6", "#7cb8ff", "#c3dcff"], 2: ["#b84a00", "#f07a00", "#ffa940", "#ffd199"] };
 const UNTAGGED = "#c9d1d9";                              // a bag with no player/number yet
@@ -906,9 +906,11 @@ function saveBoardBuild() {
   toast("Board border saved." + (n ? " Carried to " + n + " later frame" + (n === 1 ? "" : "s") + "." : "") + " It carries to the next frames you step onto.");
   updateAll(); requestDraw();
 }
+let holeReturn = null;                   // the class to go back to once the hole ring has been drawn
 function drawHoleRing() {
   if (!curImg()) return toast("Open a video first.");
   cancelBoardBuild(true); if (rot) stopRotation(true); if (edit) saveEdit(true);
+  holeReturn = state.classes[state.curClass] === "hole" ? 0 : state.curClass;
   state.sel = -1; setClass(classIdx("hole")); setTool("draw");
   toast("Drag a box around the hole. It is drawn as a ring and carries to the next frames.");
 }
@@ -998,6 +1000,7 @@ function declareOut(i, st) {                              // st 3 = went in the 
 const declareHole = i => declareOut(i, 3), declareOff = i => declareOut(i, 4);
 function setClass(i) {
   state.curClass = i;
+  if (state.classes[i] !== "hole") holeReturn = null;
   if (state.sel >= 0 && curL().boxes[state.sel] && curL().boxes[state.sel].c !== i) mutate(L => { L.boxes[state.sel].c = i; });
   else { updateAll(); scheduleSave(); requestDraw(); }
 }
@@ -1580,7 +1583,10 @@ function endPointer(e) {
       const nb = { c: state.curClass, x: bx, y: by, w: bw, h: bh };
       if (state.curClass === 0) { const t = bagNow(); nb.p = t.p; nb.n = t.n; }
       addBox(nb);
-      if (isHole(nb)) { const n = pushStaticForward(state.cur, null, nb); if (n) toast("Hole ring carried to " + n + " later frame" + (n === 1 ? "" : "s") + "."); }
+      if (isHole(nb)) {
+        const n = pushStaticForward(state.cur, null, nb); if (n) toast("Hole ring carried to " + n + " later frame" + (n === 1 ? "" : "s") + ".");
+        if (holeReturn !== null) { const back = holeReturn; state.sel = -1; setClass(back); toast("Hole ring drawn. Back to drawing " + (state.classes[back] || "boxes") + " boxes." + (n ? " Carried to " + n + " later frame" + (n === 1 ? "" : "s") + "." : "")); }   // do not stay stuck on the hole class
+      }
     }
     else { state.sel = boxAt(g.ix, g.iy); updateAll(); requestDraw(); }
   } else if (g.kind === "move" || g.kind === "resize" || g.kind === "rotate") {
