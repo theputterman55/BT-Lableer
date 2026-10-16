@@ -1,5 +1,5 @@
 // Caches the app shell so the labeler opens offline after the first visit.
-const CACHE = "bt-labeler-v7-10";
+const CACHE = "bt-labeler-v7-11";
 const SHELL = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", e => {
