@@ -32,6 +32,7 @@
   .bx.editing { background: #14202c; }
   #secBoard button.wide { width: 100%; margin-top: 6px; }
   #bqActions[hidden] { display: none; }
+  #secBoard button.wide.on { background: #c0392b; border-color: #ff6b5b; color: #fff; }
   #secBoard .hint { margin-top: 6px; font-size: 12px; line-height: 1.35; color: var(--muted); }
   #bqSave.ready { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); box-shadow: 0 0 0 3px rgba(245,165,36,.35); font-weight: 700; }
   .bx .nm { flex: 1; }
@@ -166,13 +167,15 @@
       </div>
     </section>
     <section id="secBoard">
-      <h3>Board and hole</h3>
+      <h3>Board, hole and rotation</h3>
       <button id="bqBuild" class="wide" type="button" title="Tap the four corners of the board">Build board border</button>
       <div id="bqActions" class="grid2" style="margin-top:6px" hidden>
         <button id="bqSave" type="button" title="Save the border to this frame (Enter)">Save board</button>
         <button id="bqCancel" type="button" title="Throw the border away (Esc)">Cancel</button>
       </div>
       <button id="holeBtn" class="wide" type="button" title="Switch to the hole class and drag a box around the hole">Draw hole ring</button>
+      <button id="rotBtn" class="wide" type="button" title="Place a red dot on one corner of the flying bag, frame after frame">Start rotation dots</button>
+      <label class="chk"><input type="checkbox" id="rotAdv" checked> Next frame after each dot</label>
       <div id="bhStatus" class="hint"></div>
     </section>
     <section id="secThrow">
@@ -265,6 +268,7 @@
     <tr><td>M</td><td>A resting bag got bumped: moved (green)</td></tr>
     <tr><td>&#9776; (bag row)</td><td>More actions for that bag: In the hole (this frame), Delete from here on (this frame and every later frame of the video), Delete this frame only.</td></tr>
     <tr><td>Board border</td><td>Press <b>Build board border</b> (side panel), then tap the four corners: top-left, bottom-left, bottom-right, top-right (in that order; the app puts them in order for you anyway). Drag any dot to adjust. When all four are set, <b>Save board</b> lights up (or press Enter). Esc cancels, Backspace removes the last dot. It carries to the next frames; drag a corner on a frame where the board moved and it follows from there.</td></tr>
+    <tr><td>Rotation dots</td><td>Side-panel button <b>Start rotation dots</b>: tap the same corner of the flying bag on each frame (it uses the bag under "Now drawing"). A faint ring shows where the dot was on the last frame. Delete removes this frame's dot, Esc or <b>Stop</b> ends it. Dots sit beside any boxes, so you can add them before or after drawing boxes. They are saved in the labels file and left out of the YOLO export.</td></tr>
     <tr><td>Draw hole ring</td><td>Side-panel button: switches to the hole class so you can drag a box around the hole once per video. It carries like the board.</td></tr>
     <tr><td>&#9776; &rarr; Off the board</td><td>The bag left the board or the picture. Marks that frame with a one-frame purple marker (like the hole one, not training data) and removes the bag's old resting boxes from later frames. Keep the bag as moved while any of it is visible.</td></tr>
     <tr><td>X</td><td>Selected bag went in the hole. On an old resting bag this declares it on this frame and releases it from the later frames.</td></tr>
@@ -289,7 +293,7 @@
 /* ====================== constants and state ====================== */
 const $ = id => document.getElementById(id);
 const PALETTE = ["#f5a524", "#c792ea", "#5aa9ff", "#ff6b6b", "#3ecf8e", "#ffd866", "#4dd0e1", "#ff8a65", "#a5d6a7"];
-const APP_VERSION = "7.8";
+const APP_VERSION = "7.9";
 // Player 1 = blue shades, Player 2 = orange shades; bag 1 darkest, bag 4 lightest.
 const BAG_SHADES = { 1: ["#1d4ed8", "#3b82f6", "#7cb8ff", "#c3dcff"], 2: ["#b84a00", "#f07a00", "#ffa940", "#ffd199"] };
 const UNTAGGED = "#c9d1d9";                              // a bag with no player/number yet
@@ -305,7 +309,7 @@ function textOn(hex) {
 function boxTag(b) {
   let t = state.classes[b.c] || "?";
   if (isBag(b) && b.p) t = "P" + b.p + "B" + b.n;
-  if (isBag(b)) t += b.st === 1 ? " · resting" : b.st === 2 ? " · moved" : b.st === 3 ? " · in hole" : b.st === 4 ? " · off board" : "";
+  if (isBag(b)) t += b.st === 1 ? " · resting" : b.st === 2 ? " · moved" : b.st === 3 ? " · in hole" : b.st === 4 ? " · off board" : b.st === 5 ? " · rotation dot" : "";
   return t;
 }
 const grpName = n => n.replace(/_\d{4,}_t[\d.]+s(?=\.[^.]+$)/i, "").replace(/\.[^.]+$/, "");
@@ -313,6 +317,7 @@ const HOLE_RING = "#ffe066", HOLE_ON = "#3ecf8e";
 const colorOf = i => state.classes[i] === "hole" ? HOLE_RING : PALETTE[((i % PALETTE.length) + PALETTE.length) % PALETTE.length];
 const isHole = b => !isBag(b) && state.classes[b.c] === "hole";
 const isBoard = b => !isBag(b) && state.classes[b.c] === "board";
+const isDot = b => isBag(b) && b.st === 5;               // a rotation dot: a tiny one-frame marker (never a training box)
 const isStatic = b => !isBag(b) && (isHole(b) || (isBoard(b) && !!b.q));   // drawn once per video, carried like a board
 function classIdx(name) { let i = state.classes.indexOf(name); if (i < 0) { state.classes.push(name); i = state.classes.length - 1; scheduleSave(); } return i; }
 /* A board border is a four-point shape stored inside an ordinary board box: q holds the corners as fractions (0 to 1) of the box,
@@ -617,7 +622,7 @@ const editing = () => !!(edit && curImg() && curL().boxes[state.sel] === edit.bo
 function startEdit(i) {
   if (!curImg()) return;
   if (edit) saveEdit(true);
-  const b = curL().boxes[i]; if (!b) return;
+  const b = curL().boxes[i]; if (!b || isDot(b)) return;
   state.sel = i; edit = { box: b, orig: { ...b }, before: rawL(), ulen: H(curImg().name).u.length };
   updateAll(); updateCursor(); requestDraw();
   toast("Editing. Drag to move, drag a handle to resize, then Save (or Enter). Moving on saves it too. Esc cancels.");
@@ -857,6 +862,7 @@ function flushStatic() {
 const BQ_NAMES = ["top-left", "bottom-left", "bottom-right", "top-right"];
 function startBoardBuild() {
   if (!curImg()) return toast("Open a video first.");
+  if (rot) stopRotation(true);
   if (edit) saveEdit(true);
   bq = { pts: [] }; state.sel = -1; pendingDel = null;
   updateAll(); updateCursor(); requestDraw();
@@ -886,17 +892,47 @@ function saveBoardBuild() {
 }
 function drawHoleRing() {
   if (!curImg()) return toast("Open a video first.");
-  cancelBoardBuild(true); if (edit) saveEdit(true);
+  cancelBoardBuild(true); if (rot) stopRotation(true); if (edit) saveEdit(true);
   state.sel = -1; setClass(classIdx("hole")); setTool("draw");
   toast("Drag a box around the hole. It is drawn as a ring and carries to the next frames.");
 }
 $("bqBuild").onclick = startBoardBuild; $("bqSave").onclick = saveBoardBuild; $("bqCancel").onclick = () => cancelBoardBuild(); $("holeBtn").onclick = drawHoleRing;
 
+/* Rotation dots: one red dot on the same corner of the flying bag, frame after frame. Each dot is a tiny one-frame marker kept in the
+   labels file (st 5, ev 1) and left out of the YOLO export. They sit beside any boxes, so they can be added before or after the boxes. */
+let rot = null;                          // set while rotation dots are being placed: { start }
+const rotDotOf = (L, t) => L.boxes.findIndex(b => isDot(b) && b.p === t.p && b.n === t.n);
+function rotSummary(t) {
+  const im = curImg(), g = grpName(im.name), fr = [];
+  state.imgs.forEach((m, k) => { if (grpName(m.name) !== g) return; const L = state.labels.get(m.name); if (L && rotDotOf(L, t) >= 0) fr.push(k + 1); });
+  return fr.length ? fr.length + " dot" + (fr.length === 1 ? "" : "s") + " for P" + t.p + "B" + t.n + " (frames " + fr[0] + " to " + fr[fr.length - 1] + ")" : "no dots yet for P" + t.p + "B" + t.n;
+}
+function startRotation() {
+  if (!curImg()) return toast("Open a video first.");
+  cancelBoardBuild(true); if (edit) saveEdit(true);
+  rot = { start: state.cur }; state.sel = -1; pendingDel = null;
+  updateAll(); updateCursor(); requestDraw();
+  const t = bagNow();
+  toast("Rotation dots on for P" + t.p + "B" + t.n + ". Tap the same corner of the bag on each frame. Press Stop when it has turned once.");
+}
+function stopRotation(quiet) {
+  if (!rot) return;
+  const t = bagNow(), msg = curImg() ? rotSummary(t) : "";
+  rot = null; updateAll(); updateCursor(); requestDraw();
+  if (!quiet) toast("Rotation dots stopped: " + msg + ".");
+}
+function removeRotDot() {
+  const t = bagNow(), i = rotDotOf(curL(), t);
+  if (i < 0) return toast("No rotation dot for P" + t.p + "B" + t.n + " on this frame.");
+  mutate(L => { L.boxes.splice(i, 1); state.sel = -1; });
+}
+$("rotBtn").onclick = () => (rot ? stopRotation() : startRotation());
+
 /* The ☰ menu on each bag row. Add an entry here to add an action. */
 const ROW_MENU = [
   { label: "In the hole (this frame)", show: b => isBag(b) && b.st !== 3, run: i => declareHole(i) },
   { label: "Off the board (this frame)", show: b => isBag(b) && b.st !== 4, run: i => declareOff(i) },
-  { label: "Delete from here on", show: () => true, run: i => deleteForward(i) },
+  { label: "Delete from here on", show: b => !isDot(b), run: i => deleteForward(i) },
   { label: "Delete this frame only", show: () => true, run: i => { state.sel = i; deleteSel(true); } },
 ];
 function closeRowMenu() { const m = document.getElementById("rowMenu"); if (m) m.remove(); }
@@ -993,6 +1029,7 @@ function toggleState(v) {
   const L = curL(), b = L && L.boxes[state.sel];
   if (!b) return toast("Click a bag's box first.");
   if (!isBag(b)) return toast("Resting, moved and in-hole are for bags, not boards.");
+  if (isDot(b)) return toast("That is a rotation dot, not a bag box.");
   mutate(L2 => { const x = L2.boxes[state.sel]; if (x.st === v) delete x.st; else x.st = v; if (x.st !== 3) delete x.ev; });
   // the bag being drawn has stopped or gone in the hole: its sequence is done, so line up the next bag
   const b2 = curL().boxes[state.sel], t = bagNow();
@@ -1037,7 +1074,7 @@ function bagStats() {
   for (let k = 0; k <= state.cur; k++) {
     const m = state.imgs[k]; if (grpName(m.name) !== g) continue;
     const L = state.labels.get(m.name); if (!L) continue;
-    for (const b of L.boxes) if (isBag(b) && b.p && b.n) { const id = b.p + "-" + b.n; seen.add(id); if (b.st === 3) hole.add(id); if (b.st === 4) off.add(id); }
+    for (const b of L.boxes) if (isBag(b) && !isDot(b) && b.p && b.n) { const id = b.p + "-" + b.n; seen.add(id); if (b.st === 3) hole.add(id); if (b.st === 4) off.add(id); }
   }
   return { thrown: seen.size, hole: hole.size, off: off.size, board: seen.size - hole.size - off.size };
 }
@@ -1083,7 +1120,7 @@ function renderBoxes() {
     const row = document.createElement("div"); row.className = "bx" + (i === state.sel ? " on" : "");
     const sw = document.createElement("span"); sw.className = "sw"; sw.style.background = boxColor(b);
     const nm = document.createElement("span"); nm.className = "nm";
-    nm.textContent = boxTag(b) + "  " + b.w.toFixed(1) + "×" + b.h.toFixed(1);
+    nm.textContent = isDot(b) ? boxTag(b) : boxTag(b) + "  " + b.w.toFixed(1) + "×" + b.h.toFixed(1);
     if (stateColor(b)) { nm.style.color = "#fff"; nm.style.fontWeight = "600"; row.style.borderColor = stateColor(b); row.style.borderWidth = "2px"; }
     const del = document.createElement("button"); del.className = "mini"; del.textContent = "✕"; del.setAttribute("aria-label", "Delete box");
     del.onclick = ev => { ev.stopPropagation(); edit = null; state.sel = i; deleteSel(); };
@@ -1105,7 +1142,7 @@ function renderBoxes() {
     if (!isEd) {
       const mb = document.createElement("button"); mb.className = "mini menubtn"; mb.textContent = "☰"; mb.title = "More actions"; mb.setAttribute("aria-label", "More actions");
       mb.onclick = ev => { ev.stopPropagation(); if (document.getElementById("rowMenu")) closeRowMenu(); else openRowMenu(i, mb); };
-      row.append(sw, nm, pen, mb, del);
+      if (isDot(b)) row.append(sw, nm, del); else row.append(sw, nm, pen, mb, del);
     } else row.append(sw, nm, pen, del);
     row.onclick = () => { state.sel = i; updateAll(); requestDraw(); }; box.append(row);
   });
@@ -1126,7 +1163,7 @@ function updateAll() {
   const h = im ? H(im.name) : { u: [], r: [] };
   $("undoBtn").disabled = !h.u.length; $("redoBtn").disabled = !h.r.length;
   $("delBtn").disabled = state.sel < 0; $("nextUnBtn").disabled = !has;
-  const sbx = L.boxes[state.sel], bagSel = !!(sbx && isBag(sbx));
+  const sbx = L.boxes[state.sel], bagSel = !!(sbx && isBag(sbx) && !isDot(sbx));
   [["stRest", 1], ["stMoved", 2], ["stHole", 3]].forEach(([id, v]) => { $(id).disabled = !bagSel; $(id).classList.toggle("on", bagSel && sbx.st === v); });
   const t = bagNow();
   $("throwNow").textContent = "Player " + t.p + " · Bag " + t.n;
@@ -1140,9 +1177,12 @@ function updateAll() {
   $("autoCarry").checked = state.autoCarry; $("advOnRest").checked = state.advOnRest;
   const bq0 = L.boxes.find(x => isBoard(x) && x.q), hole0 = L.boxes.find(isHole);
   $("bqBuild").textContent = bq ? "Building the border…" : bq0 ? "Redo board border" : "Build board border";
+  if (rot && !state.imgs.length) rot = null;
   $("bqBuild").disabled = !has || !!bq; $("holeBtn").disabled = !has || !!bq;
+  $("rotBtn").textContent = rot ? "Stop rotation dots" : "Start rotation dots"; $("rotBtn").classList.toggle("on", !!rot); $("rotBtn").disabled = !has || !!bq;
   $("bqActions").hidden = !bq; $("bqSave").disabled = !bq || bq.pts.length < 4; $("bqSave").classList.toggle("ready", !!bq && bq.pts.length === 4);
-  $("bhStatus").textContent = bq ? (bq.pts.length < 4 ? "Tap the " + BQ_NAMES[bq.pts.length] + " corner (" + (bq.pts.length + 1) + " of 4)." : "All four set. Drag a dot to adjust, then press Save board.")
+  const tn = bagNow(), hasDot = has && rotDotOf(L, tn) >= 0;
+  $("bhStatus").textContent = rot ? "Rotation dots for P" + tn.p + "B" + tn.n + ": tap the same corner of the bag. This frame: " + (hasDot ? "dot set" : "no dot yet") + ". Delete removes it, Esc stops." : bq ? (bq.pts.length < 4 ? "Tap the " + BQ_NAMES[bq.pts.length] + " corner (" + (bq.pts.length + 1) + " of 4)." : "All four set. Drag a dot to adjust, then press Save board.")
     : has ? "This frame: board border " + (bq0 ? "set" : "not set") + " · hole ring " + (hole0 ? "set" : "not set") + "." : "";
   const bs = bagStats();
   $("bagCount").textContent = bs && bs.thrown ? "Bags so far in this video: " + bs.thrown + " of 8 thrown · " + bs.hole + " in the hole · " + (bs.off ? bs.off + " off the board · " : "") + bs.board + " on the board" : "Bag count appears once boxes have a player and bag number.";
@@ -1218,7 +1258,7 @@ function handlePts(b) {
 }
 function hitHandle(px, py, type) {
   const b = curL().boxes[state.sel];
-  if (!b) return null;
+  if (!b || isDot(b)) return null;
   const r = type === "mouse" ? 12 : 22;
   if (b.q) {
     let best = null, bd = Infinity;
@@ -1236,7 +1276,7 @@ function hitHandle(px, py, type) {
 function boxAt(ix, iy) {
   let best = -1, area = Infinity; const bs = curL().boxes;
   for (let i = 0; i < bs.length; i++) {
-    const b = bs[i];
+    const b = bs[i]; if (isDot(b)) continue;
     if (ix >= b.x && ix <= b.x + b.w && iy >= b.y && iy <= b.y + b.h && b.w * b.h <= area && (!b.q || inPoly(quadPts(b), ix, iy))) { best = i; area = b.w * b.h; }
   }
   return best;
@@ -1253,6 +1293,13 @@ function draw() {
   const holeNow = bs.filter(x => isBag(x) && x.st === 3 && x.ev).map(x => boxTag({ ...x, st: 0 }));   // bags declared in the hole on this frame
   for (let i = 0; i < bs.length; i++) {
     const b = bs[i], col = boxColor(b), sc = stateColor(b);
+    if (isDot(b)) {                                      // a rotation dot: red, with a white ring so it shows on any bag colour
+      const dx = b.x + b.w / 2, dy = b.y + b.h / 2;
+      ctx.beginPath(); ctx.arc(dx, dy, 8 / s, 0, Math.PI * 2); ctx.fillStyle = "rgba(255,255,255,.9)"; ctx.fill();
+      ctx.beginPath(); ctx.arc(dx, dy, 5.5 / s, 0, Math.PI * 2); ctx.fillStyle = "#ff1f1f"; ctx.fill();
+      if (i === state.sel) { ctx.beginPath(); ctx.arc(dx, dy, 11 / s, 0, Math.PI * 2); ctx.lineWidth = 2 / s; ctx.strokeStyle = "#fff"; ctx.stroke(); }
+      continue;
+    }
     if (isHole(b)) {                                     // the hole ring: an ellipse inside its box, green on an in-the-hole frame
       const on = holeNow.length > 0, rc = on ? HOLE_ON : HOLE_RING;
       ctx.beginPath(); ctx.ellipse(b.x + b.w / 2, b.y + b.h / 2, b.w / 2, b.h / 2, b.rot || 0, 0, Math.PI * 2);
@@ -1282,6 +1329,10 @@ function draw() {
     }
     if (isBag(b) && b.st === 3) { ctx.lineWidth = 2 / s; ctx.strokeStyle = HOLE_COLOR; ctx.beginPath(); ctx.moveTo(b.x, b.y); ctx.lineTo(b.x + b.w, b.y + b.h); ctx.moveTo(b.x + b.w, b.y); ctx.lineTo(b.x, b.y + b.h); ctx.stroke(); }
     if (isBag(b) && b.st === 4) { ctx.lineWidth = 2 / s; ctx.strokeStyle = OFF_COLOR; ctx.beginPath(); ctx.moveTo(b.x, b.y + b.h); ctx.lineTo(b.x + b.w, b.y); ctx.stroke(); }
+  }
+  if (rot && state.cur > 0) {                            // a faint ring where the dot was on the previous frame
+    const pl = state.labels.get(state.imgs[state.cur - 1].name), t0 = bagNow(), pd = pl && pl.boxes.find(x => isDot(x) && x.p === t0.p && x.n === t0.n);
+    if (pd) { ctx.beginPath(); ctx.arc(pd.x + pd.w / 2, pd.y + pd.h / 2, 9 / s, 0, Math.PI * 2); ctx.setLineDash([4 / s, 3 / s]); ctx.lineWidth = 2 / s; ctx.strokeStyle = "rgba(255,80,80,.95)"; ctx.stroke(); ctx.setLineDash([]); }
   }
   const hb = bs[hoverBox];
   if (hb) {                              // pulse the box whose list row the pointer is over
@@ -1314,7 +1365,7 @@ function draw() {
       ctx.beginPath(); ctx.arc(sx, sy, 8, 0, Math.PI * 2); ctx.fillStyle = "#fff"; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = boxColor(sb); ctx.stroke();
       ctx.fillStyle = "#111"; ctx.font = "700 10px system-ui, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(String(j + 1), sx, sy + 0.5); ctx.textAlign = "left";
     });
-  } else if (sb) {
+  } else if (sb && !isDot(sb)) {
     const pts = handlePts(sb);
     for (const h of HANDLES) {
       const sx = ox + pts[h][0] * s, sy = oy + pts[h][1] * s;
@@ -1387,6 +1438,7 @@ stage.addEventListener("pointerdown", e => {
   ptrs.set(e.pointerId, { x: p.x, y: p.y, type: e.pointerType });
   if (ptrs.size === 2) {
     if (bq && gesture && gesture.kind === "bqpt" && gesture.fresh) { bq.pts.pop(); updateAll(); }   // a pinch is not a corner
+    if (rot && gesture && gesture.kind === "rdot") { const d0 = curL().boxes[gesture.i]; if (d0) { if (gesture.old) { d0.x = gesture.old.x; d0.y = gesture.old.y; } else curL().boxes.splice(gesture.i, 1); } updateAll(); }   // a pinch is not a dot
     startPinch(); requestDraw(); return;
   }
   if (ptrs.size > 2) return;
@@ -1400,6 +1452,14 @@ stage.addEventListener("pointerdown", e => {
     if (hit >= 0) { gesture = { kind: "bqpt", i: hit }; return; }
     if (bq.pts.length < 4) { bq.pts.push({ x: cp.x, y: cp.y }); gesture = { kind: "bqpt", i: bq.pts.length - 1, fresh: true }; updateAll(); requestDraw(); }
     return;
+  }
+  if (rot) {                             // rotation dots: a tap puts this bag's dot there (or moves it); drag to fine-tune
+    const L = curL(), t = bagNow(), before = rawL(), had0 = L.boxes.length > 0;
+    let i = rotDotOf(L, t), old = null;
+    if (i >= 0) old = { x: L.boxes[i].x, y: L.boxes[i].y };
+    else { L.boxes.push({ c: 0, x: cp.x - 1.5, y: cp.y - 1.5, w: 3, h: 3, p: t.p, n: t.n, st: 5, ev: 1 }); i = L.boxes.length - 1; }
+    L.boxes[i].x = cp.x - 1.5; L.boxes[i].y = cp.y - 1.5; L.done = false; if (had0) L.had = true;
+    gesture = { kind: "rdot", i, before, old }; requestDraw(); return;
   }
   const hd = hitHandle(p.x, p.y, e.pointerType);
   if (hd === "rot") { const b = curL().boxes[state.sel]; gesture = { kind: "rotate", start: staticSnap(b), before: rawL() }; return; }
@@ -1433,6 +1493,7 @@ stage.addEventListener("pointermove", e => {
   if (g.kind === "pan") { view.ox = g.ox + (p.x - g.sx); view.oy = g.oy + (p.y - g.sy); requestDraw(); return; }
   const ip = toImg(p.x, p.y), cp = clampPt(ip);
   if (g.kind === "bqpt") { if (bq && bq.pts[g.i]) bq.pts[g.i] = { x: cp.x, y: cp.y }; requestDraw(); return; }
+  if (g.kind === "rdot") { const d0 = curL().boxes[g.i]; if (d0) { d0.x = cp.x - 1.5; d0.y = cp.y - 1.5; } requestDraw(); return; }
   if (g.kind === "draw") {
     g.x1 = cp.x; g.y1 = cp.y;
     if (Math.hypot(p.x - g.sx, p.y - g.sy) > 5) g.moved = true;
@@ -1480,6 +1541,11 @@ function endPointer(e) {
   if (e.type === "pointercancel") { gesture = null; requestDraw(); return; }
   gesture = null; updateCursor();
   if (g.kind === "bqpt") { updateAll(); requestDraw(); return; }
+  if (g.kind === "rdot") {
+    if (rawL() !== g.before) { pushUndoRaw(g.before); changed(); }
+    if ($("rotAdv").checked && state.cur < state.imgs.length - 1) goTo(state.cur + 1); else requestDraw();
+    return;
+  }
   if (g.kind === "draw") {
     const bx = Math.min(g.x0, g.x1), by = Math.min(g.y0, g.y1), bw = Math.abs(g.x1 - g.x0), bh = Math.abs(g.y1 - g.y0);
     if (g.moved && bw >= MIN_BOX && bh >= MIN_BOX) {
@@ -1519,6 +1585,10 @@ window.addEventListener("keydown", e => {
     if (k === "Escape") { cancelBoardBuild(); return; }
     if (k === "Enter") { saveBoardBuild(); e.preventDefault(); return; }
     if (k === "Backspace" || k === "Delete") { bq.pts.pop(); updateAll(); requestDraw(); e.preventDefault(); return; }
+  }
+  if (rot) {
+    if (k === "Escape") { stopRotation(); return; }
+    if (k === "Backspace" || k === "Delete") { removeRotDot(); e.preventDefault(); return; }
   }
   if (/^[1-9]$/.test(k)) { const i = +k - 1; if (i < state.classes.length) setClass(i); return; }
   if (k === "Enter" && editing()) { saveEdit(); e.preventDefault(); return; }
@@ -1587,7 +1657,7 @@ async function importLabels(file) {
   let n = 0, pending = 0;
   for (const [name, v] of Object.entries(o.images)) {
     const boxes = (v.boxes || []).filter(b => map[b.c] !== undefined && [b.x, b.y, b.w, b.h].every(Number.isFinite) && b.w > 0 && b.h > 0)
-      .map(b => { const o = { c: map[b.c], x: +b.x, y: +b.y, w: +b.w, h: +b.h }; if (b.p >= 1 && b.p <= 2 && b.n >= 1 && b.n <= 4) { o.p = +b.p; o.n = +b.n; } const st = b.st || (b.r ? 1 : 0); if (st >= 1 && st <= 4) o.st = st; if (b.ev && (o.st === 3 || o.st === 4)) o.ev = 1; if (Array.isArray(b.q) && b.q.length === 4 && b.q.every(a => Array.isArray(a) && a.length === 2 && a.every(Number.isFinite))) o.q = b.q.map(a => [+a[0], +a[1]]); if (Number.isFinite(+b.rot) && b.rot) o.rot = +b.rot; return o; });
+      .map(b => { const o = { c: map[b.c], x: +b.x, y: +b.y, w: +b.w, h: +b.h }; if (b.p >= 1 && b.p <= 2 && b.n >= 1 && b.n <= 4) { o.p = +b.p; o.n = +b.n; } const st = b.st || (b.r ? 1 : 0); if (st >= 1 && st <= 5) o.st = st; if (b.ev && (o.st === 3 || o.st === 4 || o.st === 5)) o.ev = 1; if (Array.isArray(b.q) && b.q.length === 4 && b.q.every(a => Array.isArray(a) && a.length === 2 && a.every(Number.isFinite))) o.q = b.q.map(a => [+a[0], +a[1]]); if (Number.isFinite(+b.rot) && b.rot) o.rot = +b.rot; return o; });
     state.labels.set(name, { boxes, done: !!v.done && !boxes.length });
     n++; if (!have.has(name)) pending++;
   }
@@ -1598,7 +1668,7 @@ async function importLabels(file) {
 /* ====================== YOLO export ====================== */
 const groupOf = name => name.replace(/_\d{4,}_t[\d.]+s(?=\.[^.]+$)/i, "").replace(/\.[^.]+$/, "");
 function hash(s) { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); } return h >>> 0; }
-const exportItems = neg => state.imgs.filter(im => { const L = state.labels.get(im.name); return L && (L.boxes.length || (neg && L.done)); });
+const exportItems = neg => state.imgs.filter(im => { const L = state.labels.get(im.name); return L && (L.boxes.some(b => !isDot(b)) || (neg && L.done)); });   // a frame holding only rotation dots has an unboxed bag in it: not a training image
 function makeSplit(items, pct, method) {
   const val = new Set();
   if (pct <= 0 || items.length < 2) return val;
