@@ -309,7 +309,7 @@
 /* ====================== constants and state ====================== */
 const $ = id => document.getElementById(id);
 const PALETTE = ["#f5a524", "#c792ea", "#5aa9ff", "#ff6b6b", "#3ecf8e", "#ffd866", "#4dd0e1", "#ff8a65", "#a5d6a7"];
-const APP_VERSION = "7.12";
+const APP_VERSION = "7.13";
 // Player 1 = blue shades, Player 2 = orange shades; bag 1 darkest, bag 4 lightest.
 const BAG_SHADES = { 1: ["#1d4ed8", "#3b82f6", "#7cb8ff", "#c3dcff"], 2: ["#b84a00", "#f07a00", "#ffa940", "#ffd199"] };
 const UNTAGGED = "#c9d1d9";                              // a bag with no player/number yet
@@ -785,9 +785,9 @@ function addBox(b) {
   let carried = [];
   if (state.autoCarry && !L0.boxes.length && !L0.done) {
     carried = carrySource().map(x => cloneBox(x, bmp.width, bmp.height))
-      .filter(x => !(isBag(b) && b.p && x.p === b.p && x.n === b.n) && iou(x, b) < 0.9);
+      .filter(x => !(isBag(b) && b.p && x.p === b.p && x.n === b.n) && iou(x, b) < 0.9 && !(isHole(b) && isHole(x)));
   }
-  mutate(L => { L.boxes.push(...carried, b); L.done = false; state.sel = L.boxes.length - 1; });
+  mutate(L => { if (isHole(b)) L.boxes = L.boxes.filter(x => !isHole(x)); L.boxes.push(...carried, b); L.done = false; state.sel = L.boxes.length - 1; });   // there is only one hole ring per frame: a new one replaces the old
   if (carried.length) toast("Carried " + carried.length + " resting bag/board box" + (carried.length === 1 ? "" : "es") + " from the last frame.");
 }
 let pendingDel = null;                   // a resting bag whose delete is waiting for "did it go in the hole?"
@@ -1013,10 +1013,17 @@ function copyPrev() {
   if (!curImg() || state.cur === 0) return toast("There is no previous image.");
   const src = state.labels.get(state.imgs[state.cur - 1].name);
   if (!src || !src.boxes.length) return toast("The previous image has no boxes.");
-  const L = curL(), W = bmp.width, Hh = bmp.height, add = [], upd = [];
+  const L = curL(), W = bmp.width, Hh = bmp.height, add = [], upd = [], repl = [];
   for (const b of src.boxes) {
     if (b.ev) continue;                                   // an in-the-hole marker belongs to one frame only
     const nb = cloneBox(b, W, Hh);
+    if (isStatic(nb)) {                                   // a board border or hole ring: the copy replaces the one already on this frame
+      const same = o => isHole(nb) ? isHole(o) : (isBoard(o) && !!o.q);
+      if (L.boxes.some(o => same(o) && closeStatic(o, nb))) continue;
+      const ks = L.boxes.findIndex(same);
+      if (ks >= 0) repl.push([ks, nb]); else add.push(nb);
+      continue;
+    }
     if (L.boxes.some(o => o.c === nb.c && iou(o, nb) > 0.9)) continue;
     // the same resting bag already sits here at an older spot: the copy replaces it instead of doubling it
     let k = -1;
@@ -1026,9 +1033,9 @@ function copyPrev() {
     }
     if (k >= 0) upd.push([k, nb]); else add.push(nb);
   }
-  if (!add.length && !upd.length) return toast("Those boxes are already here.");
-  mutate(L2 => { upd.forEach(([k, nb]) => { Object.assign(L2.boxes[k], { x: nb.x, y: nb.y, w: nb.w, h: nb.h }); }); L2.boxes.push(...add); L2.done = false; });
-  toast("Copied " + add.length + " new box" + (add.length === 1 ? "" : "es") + (upd.length ? " and moved " + upd.length + " resting bag" + (upd.length === 1 ? "" : "s") + " to their latest spot" : "") + ". Adjust any that moved.");
+  if (!add.length && !upd.length && !repl.length) return toast("Those boxes are already here.");
+  mutate(L2 => { repl.forEach(([k, nb]) => { L2.boxes[k] = nb; }); upd.forEach(([k, nb]) => { Object.assign(L2.boxes[k], { x: nb.x, y: nb.y, w: nb.w, h: nb.h }); }); L2.boxes.push(...add); L2.done = false; });
+  toast("Copied " + add.length + " new box" + (add.length === 1 ? "" : "es") + (upd.length ? " and moved " + upd.length + " resting bag" + (upd.length === 1 ? "" : "s") + " to their latest spot" : "") + (repl.length ? (upd.length ? "; " : " and ") + "updated the board/hole shape" : "") + ". Adjust any that moved.");
 }
 function markEmpty() {
   const L = curL();
@@ -1582,9 +1589,10 @@ function endPointer(e) {
     if (g.moved && bw >= MIN_BOX && bh >= MIN_BOX) {
       const nb = { c: state.curClass, x: bx, y: by, w: bw, h: bh };
       if (state.curClass === 0) { const t = bagNow(); nb.p = t.p; nb.n = t.n; }
+      const L1 = curL(), oldRing = isHole(nb) ? (L1.boxes.find(isHole) || (!L1.boxes.length && state.autoCarry && !L1.done ? carrySource().find(isHole) : null)) : null, oldSnap = oldRing ? staticSnap(oldRing) : null;
       addBox(nb);
       if (isHole(nb)) {
-        const n = pushStaticForward(state.cur, null, nb); if (n) toast("Hole ring carried to " + n + " later frame" + (n === 1 ? "" : "s") + ".");
+        const n = pushStaticForward(state.cur, oldSnap, nb); if (n) toast("Hole ring carried to " + n + " later frame" + (n === 1 ? "" : "s") + ".");
         if (holeReturn !== null) { const back = holeReturn; state.sel = -1; setClass(back); toast("Hole ring drawn. Back to drawing " + (state.classes[back] || "boxes") + " boxes." + (n ? " Carried to " + n + " later frame" + (n === 1 ? "" : "s") + "." : "")); }   // do not stay stuck on the hole class
       }
     }

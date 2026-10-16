@@ -82,6 +82,10 @@ Labeling works on a phone, but a desktop or tablet is much easier for small bags
 
 After the ring is drawn the labeler switches back to the class you were drawing before (usually bag), so the next box you drag is a bag again. If you ever find yourself drawing rings, press **1** (bag) or click *bag* in the class list.
 
+**One ring per frame.** Drawing a new hole ring on a frame that already has one replaces it (and the later frames that held the old one follow). **C** (copy previous boxes) does the same for the board border and the hole ring: the copy replaces the one already on the frame instead of adding a second.
+
+**Fixing a border or ring on frames you already tracked.** Go to the first frame that is wrong, press **Delete** beside Build board border or Draw hole ring (this clears that frame and the later frames that share it), then build or draw it once. It is pushed onto the later frames you have already labeled, up to the first frame that has its own different shape, and it carries to the frames you step onto after that.
+
 ## Deleting the board border or hole ring
 Next to **Build board border** and **Draw hole ring** there is a **Delete** button. It removes the border (or ring) from this frame and from the later frames of the video that still hold the same one, and asks first when later frames are affected. It does not touch earlier frames, so to wipe it from a whole video go to the first frame that has it. While rebuilding a border, a **Delete border** button also shows beside Save board and Cancel. After deleting you can build or draw it again and it carries forward as before.
 
