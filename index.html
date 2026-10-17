@@ -286,7 +286,8 @@
     <tr><td>Rotation dots</td><td>Side-panel button <b>Start rotation dots</b>: tap the same corner of the flying bag on each frame (it uses the bag under "Now drawing"). A faint ring shows where the dot was on the last frame. Delete removes this frame's dot, Esc or <b>Stop</b> ends it. Dots sit beside any boxes, so you can add them before or after drawing boxes. They are saved in the labels file and left out of the YOLO export.</td></tr>
     <tr><td>Delete border or ring</td><td>The <b>Delete</b> button beside <b>Build board border</b> or <b>Draw hole ring</b> removes it from this frame and the later frames that still share it (it asks first). Earlier frames are not touched, so go to the first frame that has it to clear a whole video. While rebuilding a border, <b>Delete border</b> also appears beside Save board and Cancel.</td></tr>
     <tr><td>Draw hole ring</td><td>Side-panel button: switches to the hole class so you can drag a box around the hole once per video. It carries like the board.</td></tr>
-    <tr><td>&#9776; &rarr; Off the board</td><td>The bag left the board or the picture. Marks that frame with a one-frame purple marker (like the hole one, not training data) and removes the bag's old resting boxes from later frames. Keep the bag as moved while any of it is visible.</td></tr>
+    <tr><td>&#9776; &rarr; Off the board</td><td>The bag is off the board but still in the picture (left, right or in front). Its box turns red with a dashed border and a slash, stays on every later frame like a resting bag, and is training data. Delete it from here on when the bag is gone.</td></tr>
+    <tr><td>&#9776; &rarr; Left the picture</td><td>The bag left the picture entirely. Marks that frame with a one-frame purple marker (like the hole one, not training data) and removes the bag's old resting boxes from later frames.</td></tr>
     <tr><td>X</td><td>Selected bag went in the hole. On an old resting bag this declares it on this frame and releases it from the later frames.</td></tr>
     <tr><td>3, then drag</td><td>Draw the hole ring once per video (press Esc first so you do not change a selected box). It is an ellipse in its box, carries to the next frames, and turns green on a frame where a bag is declared in the hole.</td></tr>
     <tr><td>N / Shift+N</td><td>Next / previous bag to draw (Player 1 bag 1, Player 2 bag 1, ...)</td></tr>
@@ -309,14 +310,17 @@
 /* ====================== constants and state ====================== */
 const $ = id => document.getElementById(id);
 const PALETTE = ["#f5a524", "#c792ea", "#5aa9ff", "#ff6b6b", "#3ecf8e", "#ffd866", "#4dd0e1", "#ff8a65", "#a5d6a7"];
-const APP_VERSION = "7.13";
+const APP_VERSION = "7.14";
 // Player 1 = blue shades, Player 2 = orange shades; bag 1 darkest, bag 4 lightest.
 const BAG_SHADES = { 1: ["#1d4ed8", "#3b82f6", "#7cb8ff", "#c3dcff"], 2: ["#b84a00", "#f07a00", "#ffa940", "#ffd199"] };
 const UNTAGGED = "#c9d1d9";                              // a bag with no player/number yet
 const REST_COLOR = "#ff2d2d", SHIFT_COLOR = "#3ecf8e", HOLE_COLOR = "#ffffff", OFF_COLOR = "#c084fc";
 const isBag = b => b.c === 0;
 const shadeOf = (p, n) => (BAG_SHADES[p] && BAG_SHADES[p][n - 1]) || UNTAGGED;
-const stateColor = b => (isBag(b) ? (b.st === 1 ? REST_COLOR : b.st === 2 ? SHIFT_COLOR : b.st === 3 ? HOLE_COLOR : b.st === 4 ? OFF_COLOR : null) : null);
+/* A bag that stays put from frame to frame: resting, or off the board but still in the picture (st 4 without the one-frame marker flag).
+   Both are carried to the next frames and followed forward; "left the picture" (st 4 with ev) is a one-frame marker instead. */
+const STAYS = b => isBag(b) && (b.st === 1 || (b.st === 4 && !b.ev));
+const stateColor = b => (isBag(b) ? (b.st === 1 ? REST_COLOR : b.st === 2 ? SHIFT_COLOR : b.st === 3 ? HOLE_COLOR : b.st === 4 ? (b.ev ? OFF_COLOR : REST_COLOR) : null) : null);
 function boxColor(b) { return isBag(b) ? (b.p ? shadeOf(b.p, b.n) : UNTAGGED) : colorOf(b.c); }
 function textOn(hex) {
   const v = parseInt(hex.slice(1), 16), r = v >> 16, g = (v >> 8) & 255, bl = v & 255;
@@ -657,7 +661,7 @@ function syncForward(si) {
   if (!SL) return 0;
   const g = grpName(src.name), touched = new Set();
   const touch = (m, L) => { if (touched.has(m.name)) return; touched.add(m.name); const h = H(m.name); h.u.push(JSON.stringify({ boxes: L.boxes, done: L.done })); if (h.u.length > 80) h.u.shift(); h.r.length = 0; };
-  for (const r of SL.boxes.filter(x => isBag(x) && x.st === 1)) {
+  for (const r of SL.boxes.filter(STAYS)) {
     const tagged = !!r.p, same = x => isBag(x) && (x.p || 0) === (r.p || 0) && (x.n || 0) === (r.n || 0);
     let anchor = null;
     for (let k = si + 1; k < state.imgs.length; k++) {
@@ -665,11 +669,11 @@ function syncForward(si) {
       const L = state.labels.get(m.name); if (!L || !L.boxes.length) break;
       let hit = -1;
       if (tagged) {
-        hit = L.boxes.findIndex(x => same(x) && x.st === 1);
+        hit = L.boxes.findIndex(x => same(x) && STAYS(x));
         if (hit < 0 && L.boxes.some(same)) break;           // here the bag was moved or went in the hole
       } else {
         let best = 0.3; const ref = anchor || r;
-        L.boxes.forEach((x, j) => { if (same(x) && !x.p && x.st === 1) { const v = iou(x, ref); if (v > best) { best = v; hit = j; } } });
+        L.boxes.forEach((x, j) => { if (same(x) && !x.p && STAYS(x)) { const v = iou(x, ref); if (v > best) { best = v; hit = j; } } });
         if (hit < 0) break;
       }
       if (hit < 0) {                                          // the bag is not on this frame yet: add it
@@ -678,11 +682,11 @@ function syncForward(si) {
       const cur = L.boxes[hit];
       if (anchor && iou(cur, anchor) < 0.9) break;            // it has its own resting spot here: stop
       if (!anchor) anchor = { x: cur.x, y: cur.y, w: cur.w, h: cur.h };
-      const extra = tagged ? L.boxes.map((x, j) => (j !== hit && same(x) && x.st === 1) ? j : -1).filter(j => j >= 0) : [];
-      const moveIt = iou(cur, r) <= 0.98;
+      const extra = tagged ? L.boxes.map((x, j) => (j !== hit && same(x) && STAYS(x)) ? j : -1).filter(j => j >= 0) : [];
+      const moveIt = iou(cur, r) <= 0.98 || cur.st !== r.st;
       if (moveIt || extra.length) {
         touch(m, L);
-        if (moveIt) { cur.x = r.x; cur.y = r.y; cur.w = r.w; cur.h = r.h; }
+        if (moveIt) { cur.x = r.x; cur.y = r.y; cur.w = r.w; cur.h = r.h; cur.st = r.st; delete cur.ev; }
         if (extra.length) L.boxes = L.boxes.filter((x, j) => !extra.includes(j));
         refreshFi(m);
       }
@@ -743,7 +747,7 @@ function arriveCarry() {
   const L = curL();
   if (!L || L.boxes.length || L.done) return;
   const src = carrySource();
-  if (!src.some(x => (isBag(x) && x.st === 1) || isStatic(x))) return;   // resting bags, a board border and the hole ring carry on their own
+  if (!src.some(x => STAYS(x) || isStatic(x))) return;   // resting bags, a board border and the hole ring carry on their own
   const carried = src.map(x => cloneBox(x, bmp.width, bmp.height));
   mutate(L2 => { L2.boxes.push(...carried); });
   const nb = carried.filter(x => isBag(x)).length, ns = carried.length - nb;
@@ -766,7 +770,7 @@ function carrySource() {
   for (let k = state.cur - 1; k >= 0 && k >= state.cur - 30; k--) {
     const m = state.imgs[k]; if (grpName(m.name) !== g) break;
     const L = state.labels.get(m.name);
-    if (L && L.boxes.length) return L.boxes.filter(x => !isBag(x) || x.st === 1);
+    if (L && L.boxes.length) return L.boxes.filter(x => !isBag(x) || STAYS(x));
     if (L && (L.done || L.had)) return [];                 // marked empty, or boxes were cleared on purpose: nothing carries across it
   }
   return [];
@@ -808,8 +812,8 @@ function releaseForward(si, b) {
   for (let k = si + 1; k < state.imgs.length; k++) {
     const m = state.imgs[k]; if (grpName(m.name) !== g) break;
     const L = state.labels.get(m.name); if (!L || !L.boxes.length) break;
-    if (tagged && L.boxes.some(x => same(x) && x.st !== 1)) break;
-    const idx = L.boxes.map((x, j) => (same(x) && x.st === 1 && (tagged || iou(x, b) > 0.5)) ? j : -1).filter(j => j >= 0);
+    if (tagged && L.boxes.some(x => same(x) && !STAYS(x))) break;
+    const idx = L.boxes.map((x, j) => (same(x) && STAYS(x) && (tagged || iou(x, b) > 0.5)) ? j : -1).filter(j => j >= 0);
     if (!idx.length) { if (tagged) continue; break; }
     const h = H(m.name); h.u.push(JSON.stringify({ boxes: L.boxes, done: L.done })); if (h.u.length > 80) h.u.shift(); h.r.length = 0;
     L.had = true; L.boxes = L.boxes.filter((x, j) => !idx.includes(j)); refreshFi(m); n++;
@@ -959,7 +963,8 @@ $("rotBtn").onclick = () => (rot ? stopRotation() : startRotation());
 /* The ☰ menu on each bag row. Add an entry here to add an action. */
 const ROW_MENU = [
   { label: "In the hole (this frame)", show: b => isBag(b) && b.st !== 3, run: i => declareHole(i) },
-  { label: "Off the board (this frame)", show: b => isBag(b) && b.st !== 4, run: i => declareOff(i) },
+  { label: "Off the board (stays on every frame)", show: b => isBag(b) && !isDot(b) && !(b.st === 4 && !b.ev), run: i => declareOffStay(i) },
+  { label: "Left the picture (this frame)", show: b => isBag(b) && !isDot(b) && !(b.st === 4 && b.ev), run: i => declareOff(i) },
   { label: "Delete from here on", show: b => !isDot(b), run: i => deleteForward(i) },
   { label: "Delete this frame only", show: () => true, run: i => { state.sel = i; deleteSel(true); } },
 ];
@@ -998,6 +1003,21 @@ function declareOut(i, st) {                              // st 3 = went in the 
   updateAll(); requestDraw();
 }
 const declareHole = i => declareOut(i, 3), declareOff = i => declareOut(i, 4);
+/* The bag is off the board but still visible: its box stays (red, dashed, slashed), is training data, and is carried to every later frame. */
+function declareOffStay(i) {
+  const L = curL(), b = L.boxes[i];
+  if (!b || !isBag(b) || isDot(b)) return toast("Pick a bag's box first.");
+  pendingDel = null; edit = null;
+  mutate(L2 => { const x = L2.boxes[i]; x.st = 4; delete x.ev; });
+  const n = syncForward(state.cur), t = bagNow();
+  toast(boxTag({ ...b, st: 0 }) + " is off the board. Its box stays on every later frame." + (n ? " Updated " + n + " later frame" + (n === 1 ? "" : "s") + "." : "") + (b.p ? "" : " Tip: tag the bag (P and number) so it can be followed."));
+  if (state.advOnRest && b.p === t.p && b.n === t.n && state.throwIdx < 7) {
+    setThrow(state.throwIdx + 1);
+    const nx = bagNow();
+    toast("P" + t.p + " B" + t.n + " is off the board. Now drawing Player " + nx.p + " · Bag " + nx.n + ".");
+  }
+  updateAll(); requestDraw();
+}
 function setClass(i) {
   state.curClass = i;
   if (state.classes[i] !== "hole") holeReturn = null;
@@ -1027,14 +1047,14 @@ function copyPrev() {
     if (L.boxes.some(o => o.c === nb.c && iou(o, nb) > 0.9)) continue;
     // the same resting bag already sits here at an older spot: the copy replaces it instead of doubling it
     let k = -1;
-    if (isBag(nb) && nb.st === 1) {
-      if (nb.p) k = L.boxes.findIndex(o => isBag(o) && o.p === nb.p && o.n === nb.n && o.st === 1);
-      else { let best = 0.3; L.boxes.forEach((o, j) => { if (isBag(o) && !o.p && o.st === 1) { const v = iou(o, nb); if (v > best) { best = v; k = j; } } }); }
+    if (STAYS(nb)) {
+      if (nb.p) k = L.boxes.findIndex(o => isBag(o) && o.p === nb.p && o.n === nb.n && STAYS(o));
+      else { let best = 0.3; L.boxes.forEach((o, j) => { if (isBag(o) && !o.p && STAYS(o)) { const v = iou(o, nb); if (v > best) { best = v; k = j; } } }); }
     }
     if (k >= 0) upd.push([k, nb]); else add.push(nb);
   }
   if (!add.length && !upd.length && !repl.length) return toast("Those boxes are already here.");
-  mutate(L2 => { repl.forEach(([k, nb]) => { L2.boxes[k] = nb; }); upd.forEach(([k, nb]) => { Object.assign(L2.boxes[k], { x: nb.x, y: nb.y, w: nb.w, h: nb.h }); }); L2.boxes.push(...add); L2.done = false; });
+  mutate(L2 => { repl.forEach(([k, nb]) => { L2.boxes[k] = nb; }); upd.forEach(([k, nb]) => { Object.assign(L2.boxes[k], { x: nb.x, y: nb.y, w: nb.w, h: nb.h, st: nb.st }); }); L2.boxes.push(...add); L2.done = false; });
   toast("Copied " + add.length + " new box" + (add.length === 1 ? "" : "es") + (upd.length ? " and moved " + upd.length + " resting bag" + (upd.length === 1 ? "" : "s") + " to their latest spot" : "") + (repl.length ? (upd.length ? "; " : " and ") + "updated the board/hole shape" : "") + ". Adjust any that moved.");
 }
 function markEmpty() {
@@ -1355,7 +1375,7 @@ function draw() {
       ctx.lineWidth = (i === state.sel ? 3.5 : 2.5) / s; ctx.strokeStyle = col; ctx.stroke();
       continue;
     }
-    if (isBag(b) && b.st === 1) { ctx.fillStyle = "rgba(255,45,45,.14)"; ctx.fillRect(b.x, b.y, b.w, b.h); }
+    if (STAYS(b)) { ctx.fillStyle = "rgba(255,45,45,.14)"; ctx.fillRect(b.x, b.y, b.w, b.h); }
     if (i === state.sel) { ctx.fillStyle = col + "33"; ctx.fillRect(b.x, b.y, b.w, b.h); }
     ctx.lineWidth = 4 / s; ctx.strokeStyle = "rgba(0,0,0,.65)"; ctx.strokeRect(b.x, b.y, b.w, b.h);
     ctx.lineWidth = (i === state.sel || sc ? 3 : 2) / s; ctx.strokeStyle = col;
@@ -1366,7 +1386,7 @@ function draw() {
       if (b.w > ins * 3 && b.h > ins * 3) { ctx.lineWidth = 2.5 / s; ctx.strokeStyle = sc; ctx.strokeRect(b.x + ins, b.y + ins, b.w - ins * 2, b.h - ins * 2); }
     }
     if (isBag(b) && b.st === 3) { ctx.lineWidth = 2 / s; ctx.strokeStyle = HOLE_COLOR; ctx.beginPath(); ctx.moveTo(b.x, b.y); ctx.lineTo(b.x + b.w, b.y + b.h); ctx.moveTo(b.x + b.w, b.y); ctx.lineTo(b.x, b.y + b.h); ctx.stroke(); }
-    if (isBag(b) && b.st === 4) { ctx.lineWidth = 2 / s; ctx.strokeStyle = OFF_COLOR; ctx.beginPath(); ctx.moveTo(b.x, b.y + b.h); ctx.lineTo(b.x + b.w, b.y); ctx.stroke(); }
+    if (isBag(b) && b.st === 4) { ctx.lineWidth = 2 / s; ctx.strokeStyle = b.ev ? OFF_COLOR : REST_COLOR; ctx.beginPath(); ctx.moveTo(b.x, b.y + b.h); ctx.lineTo(b.x + b.w, b.y); ctx.stroke(); }
   }
   if (rot && state.cur > 0) {                            // a faint ring where the dot was on the previous frame
     const pl = state.labels.get(state.imgs[state.cur - 1].name), t0 = bagNow(), pd = pl && pl.boxes.find(x => isDot(x) && x.p === t0.p && x.n === t0.n);
